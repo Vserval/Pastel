@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getPostBySlug, getPosts } from "@/lib/posts";
+import { getPostBySlug, getPosts, markdownToHtml } from "@/lib/posts";
 
 export function generateStaticParams() {
   return getPosts().map((post) => ({
@@ -17,13 +17,16 @@ export default async function PostPage({
 
   if (!post) return notFound();
 
+  const contentHtml = await markdownToHtml(post.content);
+
   return (
     <article className="prose prose-neutral max-w-none">
       <p className="text-sm text-gray-500">{post.date}</p>
       <h1>{post.title}</h1>
-      {post.content.split("\n").map((line, i) => (
-        <p key={i}>{line}</p>
-      ))}
+      <div
+        className="prose prose-neutral max-w-none"
+        dangerouslySetInnerHTML={{ __html: contentHtml }}
+      />
     </article>
   );
 }

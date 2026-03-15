@@ -1,47 +1,61 @@
+import fs from "fs";
+import path from "path";
+import matter from "gray-matter";
+import { remark } from "remark";
+import remarkHtml from "remark-html";
+
+const postsDirectory = path.join(process.cwd(), "posts");
+
 export type Post = {
   slug: string;
   title: string;
   date: string;
   summary: string;
   content: string;
+  tags?: string[];
 };
 
-export const posts: Post[] = [
-  {
-    slug: "first-post",
-    title: "Next.jsブログを作った",
-    date: "2026-03-15",
-    summary: "GitHub Pagesで公開するための最初のセットアップメモ。",
-    content: `
-Next.js でブログを作りました。
+export function getPosts(): Post[] {
+  const filenames = fs.readdirSync(postsDirectory);
 
-- App Router を使用
-- GitHub Pages に静的書き出しでデプロイ
-- Tailwind CSS で最低限スタイルを整備
+  const posts = filenames
+    .filter((filename) => filename.endsWith(".md"))
+    .map((filename) => {
+      const filePath = path.join(postsDirectory, filename);
+      const fileContents = fs.readFileSync(filePath, "utf8");
+      const { data, content } = matter(fileContents);
 
-これから学習ログを書いていきます。
-    `.trim(),
-  },
-  {
-    slug: "my-dev-env",
-    title: "開発環境メモ",
-    date: "2026-03-14",
-    summary: "普段使っているエディタや拡張機能など。",
-    content: `
-普段の開発環境をまとめます。
+      return {
+        slug: filename.replace(/\.md$/, ""),
+        title: data.title ?? "",
+        date: data.date ?? "",
+        summary: data.summary ?? "",
+        content,
+        tags: data.tags,
+      };
+    });
 
-- VS Code
-- GitHub
-- Node.js
-- Next.js
-    `.trim(),
-  },
-];
-
-export function getPosts() {
-  return [...posts].sort((a, b) => b.date.localeCompare(a.date));
+  return posts.sort((a, b) => b.date.localeCompare(a.date));
 }
 
-export function getPostBySlug(slug: string) {
-  return posts.find((post) => post.slug === slug);
+export function getPostBySlug(slug: string): Post | undefined {
+  const filePath = path.join(postsDirectory, `${slug}.md`);
+  if (!fs.existsSync(filePath)) return undefined;
+
+  const fileContents = fs.readFileSync(filePath, "utf8");
+  const { data, content } = matter(fileContents);
+
+  return {
+    slug,
+    title: data.title ?? "",
+    date: data.date ?? "",
+    summary: data.summary ?? "",
+    content,
+    tags: data.tags,
+  };
+}
+
+export async function markdownToHtml(content: string): Promise<string> {
+  const result = await remark().use(remarkHtml).process(content);
+  return String(result);
 }
