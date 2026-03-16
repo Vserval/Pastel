@@ -1,4 +1,4 @@
-"use client";
+ "use client";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -6,6 +6,7 @@ import { DocsSidebar } from "@/components/docs-sidebar";
 import { SearchBox } from "@/components/search-box";
 import { DocsHome } from "@/components/docs-home";
 import type { PostMeta } from "@/lib/posts";
+import { basePath } from "@/lib/site";
 
 export function DocsHomeShell({ posts }: { posts: PostMeta[] }) {
   const [query, setQuery] = useState("");
@@ -28,7 +29,7 @@ export function DocsHomeShell({ posts }: { posts: PostMeta[] }) {
       <header className="topbar topbar--dark">
         <Link href="/" className="topbar-brand" prefetch={false}>
           <span className="topbar-logo" aria-hidden="true">
-            <img src="/freepik__text-to-image__24694.png" alt="" />
+            <img src={`${basePath}/freepik__text-to-image__24694.png`} alt="" />
           </span>
           <span className="topbar-title">My Docs</span>
         </Link>

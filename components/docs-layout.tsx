@@ -8,6 +8,7 @@ import { DocsToc } from "@/components/docs-toc";
 import { SearchBox } from "@/components/search-box";
 import type { PostMeta } from "@/lib/posts";
 import type { Heading } from "@/lib/markdown";
+import { basePath } from "@/lib/site";
 
 export function DocsLayout({
   posts,
@@ -114,7 +115,7 @@ export function DocsLayout({
       <header className="topbar topbar--dark">
         <Link href="/" className="topbar-brand" prefetch={false}>
           <span className="topbar-logo" aria-hidden="true">
-            <img src="/freepik__text-to-image__24694.png" alt="" />
+            <img src={`${basePath}/freepik__text-to-image__24694.png`} alt="" />
           </span>
           <span className="topbar-title">My Docs</span>
         </Link>

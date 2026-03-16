@@ -1,8 +1,9 @@
-"use client";
+ "use client";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { PostMeta } from "@/lib/posts";
+import { basePath } from "@/lib/site";
 
 const PAGE_SIZE = 12;
 
@@ -66,7 +67,7 @@ export function DocsHome({ posts }: { posts: PostMeta[] }) {
         </div>
         <div className="hero-image">
           <img
-            src="/freepik__text-to-image__26502.png"
+            src={`${basePath}/freepik__text-to-image__26502.png`}
             alt=""
             className="hero-image-img"
             width={560}
