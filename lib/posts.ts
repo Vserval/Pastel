@@ -1,61 +1,116 @@
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 import matter from "gray-matter";
-import { remark } from "remark";
-import remarkHtml from "remark-html";
+
+export type PostMeta = {
+  slug: string[];
+  slugAsPath: string;
+  title: string;
+  description?: string;
+  category?: string;
+  date?: string;
+  order?: number;
+};
+
+export type Post = PostMeta & {
+  content: string;
+};
 
 const postsDirectory = path.join(process.cwd(), "posts");
 
-export type Post = {
-  slug: string;
-  title: string;
-  date: string;
-  summary: string;
-  content: string;
-  tags?: string[];
-};
+function getMarkdownFiles(dir: string, baseDir = dir): string[] {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
 
-export function getPosts(): Post[] {
-  const filenames = fs.readdirSync(postsDirectory);
+  return entries.flatMap((entry) => {
+    const fullPath = path.join(dir, entry.name);
 
-  const posts = filenames
-    .filter((filename) => filename.endsWith(".md"))
-    .map((filename) => {
-      const filePath = path.join(postsDirectory, filename);
-      const fileContents = fs.readFileSync(filePath, "utf8");
-      const { data, content } = matter(fileContents);
+    if (entry.isDirectory()) {
+      return getMarkdownFiles(fullPath, baseDir);
+    }
 
-      return {
-        slug: filename.replace(/\.md$/, ""),
-        title: data.title ?? "",
-        date: data.date ?? "",
-        summary: data.summary ?? "",
-        content,
-        tags: data.tags,
-      };
-    });
+    if (entry.isFile() && entry.name.endsWith(".md")) {
+      return [path.relative(baseDir, fullPath)];
+    }
 
-  return posts.sort((a, b) => b.date.localeCompare(a.date));
+    return [];
+  });
 }
 
-export function getPostBySlug(slug: string): Post | undefined {
-  const filePath = path.join(postsDirectory, `${slug}.md`);
-  if (!fs.existsSync(filePath)) return undefined;
+export function getPosts(): PostMeta[] {
+  const files = getMarkdownFiles(postsDirectory);
 
-  const fileContents = fs.readFileSync(filePath, "utf8");
+  return files
+    .map((relativePath) => {
+      const fullPath = path.join(postsDirectory, relativePath);
+      const fileContents = fs.readFileSync(fullPath, "utf8");
+      const { data } = matter(fileContents);
+
+      const slugAsPath = relativePath.replace(/\.md$/, "").replace(/\\/g, "/");
+      const slug = slugAsPath.split("/");
+
+      return {
+        slug,
+        slugAsPath,
+        title: data.title ?? slug[slug.length - 1],
+        description: data.description ?? "",
+        category: data.category ?? slug[0] ?? "Docs",
+        date: data.date ?? "",
+        order:
+          typeof data.order === "number"
+            ? data.order
+            : typeof data.order === "string" && data.order.trim()
+              ? Number(data.order)
+              : undefined,
+      };
+    })
+    .sort((a, b) => {
+      const aDate = a.date ? Date.parse(a.date) : NaN;
+      const bDate = b.date ? Date.parse(b.date) : NaN;
+      const aHasDate = Number.isFinite(aDate);
+      const bHasDate = Number.isFinite(bDate);
+      if (aHasDate && bHasDate && aDate !== bDate) return bDate - aDate;
+      if (aHasDate !== bHasDate) return aHasDate ? -1 : 1;
+
+      const aCat = a.slug[0] ?? "";
+      const bCat = b.slug[0] ?? "";
+      const catCmp = aCat.localeCompare(bCat, "ja");
+      if (catCmp !== 0) return catCmp;
+
+      const aDepth = a.slug.length;
+      const bDepth = b.slug.length;
+      if (aDepth !== bDepth) return aDepth - bDepth;
+
+      const aOrder = typeof a.order === "number" && Number.isFinite(a.order) ? a.order : Infinity;
+      const bOrder = typeof b.order === "number" && Number.isFinite(b.order) ? b.order : Infinity;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+
+      const pathCmp = a.slugAsPath.localeCompare(b.slugAsPath, "ja");
+      if (pathCmp !== 0) return pathCmp;
+
+      return a.title.localeCompare(b.title, "ja");
+    });
+}
+
+export function getPostBySlug(slugParts: string[]): Post | undefined {
+  const fullPath = path.join(postsDirectory, ...slugParts) + ".md";
+  if (!fs.existsSync(fullPath)) return undefined;
+
+  const fileContents = fs.readFileSync(fullPath, "utf8");
   const { data, content } = matter(fileContents);
 
   return {
-    slug,
-    title: data.title ?? "",
+    slug: slugParts,
+    slugAsPath: slugParts.join("/"),
+    title: data.title ?? slugParts[slugParts.length - 1],
+    description: data.description ?? "",
+    category: data.category ?? slugParts[0] ?? "Docs",
     date: data.date ?? "",
-    summary: data.summary ?? "",
+    order:
+      typeof data.order === "number"
+        ? data.order
+        : typeof data.order === "string" && data.order.trim()
+          ? Number(data.order)
+          : undefined,
     content,
-    tags: data.tags,
   };
-}
-
-export async function markdownToHtml(content: string): Promise<string> {
-  const result = await remark().use(remarkHtml).process(content);
-  return String(result);
 }
