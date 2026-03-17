@@ -157,6 +157,8 @@ const SANITIZE_SCHEMA = {
   clobberPrefix: "user-content-",
   tagNames: [
     ...((defaultSchema.tagNames ?? []) as string[]),
+    "figure",
+    "figcaption",
     "svg",
     "g",
     "path",
@@ -190,6 +192,14 @@ const SANITIZE_SCHEMA = {
       "ariaHidden",
       "role",
       "style",
+      /^data-[\w-]+$/i,
+    ],
+    figure: [
+      "className",
+      /^data-[\w-]+$/i,
+    ],
+    figcaption: [
+      "className",
       /^data-[\w-]+$/i,
     ],
     svg: [

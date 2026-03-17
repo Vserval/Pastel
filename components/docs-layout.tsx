@@ -53,18 +53,25 @@ export function DocsLayout({
   };
 
   useEffect(() => {
-    const figures = Array.from(
+    const nodes = Array.from(
       document.querySelectorAll<HTMLElement>(
-        ".markdown-body [data-rehype-pretty-code-figure]"
+        ".markdown-body [data-rehype-pretty-code-figure], .markdown-body pre"
       )
     );
 
-    figures.forEach((figure) => {
-      if (figure.dataset.hasCodeEnhancer === "true") return;
+    nodes.forEach((node) => {
+      const isFigure = node.matches("[data-rehype-pretty-code-figure]");
+      const pre = isFigure
+        ? node.querySelector<HTMLPreElement>("pre")
+        : node.matches("pre")
+          ? (node as HTMLPreElement)
+          : null;
 
-      const pre = figure.querySelector<HTMLPreElement>("pre");
-      const code = figure.querySelector<HTMLElement>("pre code");
+      const code = pre?.querySelector<HTMLElement>("code");
       if (!pre || !code) return;
+
+      const host = isFigure ? node : pre;
+      if (host.dataset.hasCodeEnhancer === "true") return;
 
       const wrapper = document.createElement("div");
       wrapper.className = "code-block-wrapper";
@@ -77,13 +84,14 @@ export function DocsLayout({
 
       button.addEventListener("click", async () => {
         try {
-          const text = Array.from(
+          const lines = Array.from(
             code.querySelectorAll<HTMLElement>("[data-line]")
-          )
-            .map((line) => line.textContent ?? "")
-            .join("\n");
+          );
+          const text = lines.length
+            ? lines.map((line) => line.textContent ?? "").join("\n")
+            : code.textContent ?? "";
 
-          await navigator.clipboard.writeText(text || code.textContent || "");
+          await navigator.clipboard.writeText(text);
 
           button.dataset.copied = "true";
           button.textContent = "Copied";
@@ -100,13 +108,13 @@ export function DocsLayout({
         }
       });
 
-      figure.parentNode?.insertBefore(wrapper, figure);
-      wrapper.appendChild(figure);
+      host.parentNode?.insertBefore(wrapper, host);
+      wrapper.appendChild(host);
       wrapper.appendChild(button);
 
-      figure.dataset.hasCodeEnhancer = "true";
+      host.dataset.hasCodeEnhancer = "true";
     });
-  }, []);
+  }, [currentSlug]);
 
   useEffect(() => {
     let cancelled = false;

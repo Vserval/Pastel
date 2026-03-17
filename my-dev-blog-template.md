@@ -2302,7 +2302,7 @@ export function DocsLayout({
   useEffect(() => {
     const figures = Array.from(
       document.querySelectorAll<HTMLElement>(
-        ".markdown-body [data-rehype-pretty-code-figure]"
+        ".markdown-body [data-rehype-pretty-code-figure], .markdown-body pre"
       )
     );
 
@@ -2353,7 +2353,7 @@ export function DocsLayout({
 
       figure.dataset.hasCodeEnhancer = "true";
     });
-  }, []);
+  }, [children]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3002,6 +3002,8 @@ const SANITIZE_SCHEMA = {
   clobberPrefix: "user-content-",
   tagNames: [
     ...((defaultSchema.tagNames ?? []) as string[]),
+    "figure",
+    "figcaption",
     "svg",
     "g",
     "path",
@@ -3035,6 +3037,14 @@ const SANITIZE_SCHEMA = {
       "ariaHidden",
       "role",
       "style",
+      /^data-[\w-]+$/i,
+    ],
+    figure: [
+      "className",
+      /^data-[\w-]+$/i,
+    ],
+    figcaption: [
+      "className",
       /^data-[\w-]+$/i,
     ],
     svg: [
@@ -3196,7 +3206,7 @@ export function extractHeadings(markdown: string): Heading[] {
     .map((line) => {
       const level = line.startsWith("###") ? 3 : 2;
       const text = line.replace(/^###?\s+/, "").trim();
-      const id = slugger.slug(text);
+      const id = `user-content-${slugger.slug(text)}`;
 
       return { level, text, id };
     });
