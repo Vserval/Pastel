@@ -1409,14 +1409,14 @@ a {
   background: transparent !important;
 }
 
-.markdown-body .heading-anchor {
+.markdown-body :is(h1, h2, h3, h4, h5, h6) > a[href^="#"] {
   display: inline-block;
   margin-left: 6px;
   color: var(--muted);
   font-size: 0.85em;
   text-decoration: none;
-  opacity: 0;
-  visibility: hidden;
+  opacity: 0 !important;
+  visibility: hidden !important;
   pointer-events: none;
   transition:
     opacity 0.12s ease-out,
@@ -1424,14 +1424,10 @@ a {
     visibility 0.12s ease-out;
 }
 
-.markdown-body h2:hover .heading-anchor,
-.markdown-body h3:hover .heading-anchor,
-.markdown-body h4:hover .heading-anchor,
-.markdown-body h2:focus-within .heading-anchor,
-.markdown-body h3:focus-within .heading-anchor,
-.markdown-body h4:focus-within .heading-anchor {
-  opacity: 1;
-  visibility: visible;
+.markdown-body :is(h1, h2, h3, h4, h5, h6):hover > a[href^="#"],
+.markdown-body :is(h1, h2, h3, h4, h5, h6):focus-within > a[href^="#"] {
+  opacity: 1 !important;
+  visibility: visible !important;
   pointer-events: auto;
   color: var(--accent);
 }
@@ -1952,8 +1948,8 @@ a {
 ## `app/layout.tsx`
 
 ```tsx
-import "./globals.css";
 import "github-markdown-css/github-markdown-dark.css";
+import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
