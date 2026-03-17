@@ -29,8 +29,30 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+## One-liner: commit & push
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+PowerShell から **変更の確認 → ステージング → コミット → GitHub への push** までを一度に実行するコマンド例です。
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```powershell
+git status; git add .; git commit -m "update docs"; git push
+```
+
+コミットメッセージは毎回自分で書き換えてください。
+
+## よく使う PowerShell コマンド
+
+開発サーバー関連で自分用にメモしておくコマンドです。
+
+```powershell
+# 既存の node プロセスを強制終了
+Get-Process node | Stop-Process -Force
+
+# プロジェクトディレクトリへ移動
+cd C:\Users\User\Documents\my-dev-blog
+
+# TurboPack を無効にして Next.js を起動
+npx next dev --no-turbo
+
+# ポート 3000 で dev サーバーを起動
+npm run dev -- -p 3000
+```
