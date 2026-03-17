@@ -351,7 +351,7 @@ export function extractHeadings(markdown: string): Heading[] {
     .map((line) => {
       const level = line.startsWith("###") ? 3 : 2;
       const text = line.replace(/^###?\s+/, "").trim();
-      const id = slugger.slug(text);
+      const id = `user-content-${slugger.slug(text)}`;
 
       return { level, text, id };
     });
