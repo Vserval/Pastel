@@ -1056,6 +1056,14 @@ a {
   background: transparent !important;
 }
 
+.markdown-body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 24px auto;
+  border-radius: 12px;
+}
+
 /* インラインコード（pre 直下以外） */
 .markdown-body :not(pre) > code {
   padding: 0.2em 0.4em;

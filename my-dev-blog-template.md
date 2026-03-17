@@ -96,6 +96,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+.cursor/*.log
 
 # env files (can opt-in for committing if needed)
 .env*
@@ -106,6 +107,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# obsidian (notes metadata)
+posts/.obsidian/
 ```
 
 ---
@@ -119,6 +123,14 @@ import { extractHeadings, markdownToHtml } from "@/lib/markdown";
 import { DocsLayout } from "@/components/docs-layout";
 import type { Metadata } from "next";
 
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export function generateStaticParams() {
   return getPosts().map((post) => ({
     slug: post.slug,
@@ -131,7 +143,8 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const post = getPostBySlug(Array.isArray(slug) ? slug : [slug]);
+  const slugParts = (Array.isArray(slug) ? slug : [slug]).map(safeDecodeURIComponent);
+  const post = getPostBySlug(slugParts);
   if (!post) return {};
 
   const title = `${post.title} | My Docs`;
@@ -166,16 +179,26 @@ function formatDate(dateString?: string): string | null {
 
 export default async function DocPage({ params }: Props) {
   const { slug } = await params;
+  const slugParts = (Array.isArray(slug) ? slug : [slug]).map(safeDecodeURIComponent);
 
   const posts = getPosts();
-  const slugPath = Array.isArray(slug) ? slug.join("/") : slug;
+  const slugPath = slugParts.join("/");
   const exists = posts.some((post) => post.slugAsPath === slugPath);
   if (!exists) notFound();
 
-  const post = getPostBySlug(Array.isArray(slug) ? slug : [slug]);
+  const post = getPostBySlug(slugParts);
   if (!post) notFound();
 
-  const contentHtml = await markdownToHtml(post.content);
+  let contentHtml = "";
+  try {
+    contentHtml = await markdownToHtml(post.content);
+  } catch (error) {
+    console.error("markdownToHtml failed:", {
+      slug: post.slugAsPath,
+      error,
+    });
+    contentHtml = "<pre>render error</pre>";
+  }
   const headings = extractHeadings(post.content);
   const formattedDate = formatDate(post.date);
 
@@ -2536,17 +2559,14 @@ export function DocsLayout({
                 </Link>
               </li>
               {segments.map((segment, index) => {
-                const href = `/docs/${segments.slice(0, index + 1).join("/")}/`;
                 const isLast = index === segments.length - 1;
 
                 return (
-                  <li key={href}>
+                  <li key={`${index}-${segment}`}>
                     {isLast ? (
                       <span aria-current="page">{segment}</span>
                     ) : (
-                      <Link href={href} prefetch={false}>
-                        {segment}
-                      </Link>
+                      <span>{segment}</span>
                     )}
                   </li>
                 );
@@ -2869,6 +2889,9 @@ import rehypePrettyCode from "rehype-pretty-code";
 import rehypeStringify from "rehype-stringify";
 import GithubSlugger from "github-slugger";
 import { visit } from "unist-util-visit";
+import fs from "node:fs";
+import path from "node:path";
+import { basePath } from "@/lib/site";
 import type {
   Root as HastRoot,
   Element as HastElement,
@@ -2877,6 +2900,181 @@ import type {
 import type { Root as MdastRoot, Blockquote, Paragraph, Text } from "mdast";
 
 type SanitizeSchema = NonNullable<Parameters<typeof rehypeSanitize>[0]>;
+
+const POSTS_DIRECTORY = path.join(process.cwd(), "posts");
+const PUBLIC_POSTS_DIRECTORY = path.join(process.cwd(), "public", "posts");
+
+function isInsideDir(filePath: string, dirPath: string): boolean {
+  const rel = path.relative(dirPath, filePath);
+  return !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+function languageFromFilename(filename: string): string {
+  const ext = path.extname(filename).toLowerCase().replace(/^\./, "");
+  switch (ext) {
+    case "py":
+      return "python";
+    case "js":
+      return "javascript";
+    case "jsx":
+      return "jsx";
+    case "ts":
+      return "typescript";
+    case "tsx":
+      return "tsx";
+    case "sh":
+      return "bash";
+    case "ps1":
+      return "powershell";
+    case "json":
+      return "json";
+    case "yml":
+    case "yaml":
+      return "yaml";
+    case "md":
+      return "markdown";
+    default:
+      return ext || "text";
+  }
+}
+
+function pickBacktickFence(body: string, minLen = 3): string {
+  let longest = 0;
+  for (const match of body.matchAll(/`+/g)) {
+    longest = Math.max(longest, match[0].length);
+  }
+  return "`".repeat(Math.max(minLen, longest + 1));
+}
+
+function findFilesByBasename(dir: string, basename: string): string[] {
+  const results: string[] = [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...findFilesByBasename(fullPath, basename));
+      continue;
+    }
+    if (entry.isFile() && entry.name === basename) {
+      results.push(fullPath);
+    }
+  }
+
+  return results;
+}
+
+async function expandObsidianEmbeds(markdown: string): Promise<string> {
+  // Obsidian embed syntax: ![[path/to/file.ext]] or ![[file.ext|alias]]
+  const EMBED_RE = /!\[\[([^\]\|]+?)(?:\|([^\]]+))?\]\]/g;
+  const IMAGE_EXTS = new Set([
+    ".avif",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif",
+    ".svg",
+  ]);
+  const TEXT_EXTS = new Set([
+    ".txt",
+    ".md",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".json",
+    ".yml",
+    ".yaml",
+    ".sh",
+    ".ps1",
+    ".py",
+    ".html",
+    ".css",
+    ".xml",
+  ]);
+
+  const matches = Array.from(markdown.matchAll(EMBED_RE));
+  if (matches.length === 0) return markdown;
+
+  const replacements = await Promise.all(
+    matches.map(async (match) => {
+      const raw = match[0];
+      const target = (match[1] ?? "").trim();
+      const alias = (match[2] ?? "").trim();
+      if (!target) return { raw, rendered: raw };
+
+      const normalized = target.replace(/^\.?[\\/]+/, "").replace(/\\/g, "/");
+      const candidatePaths = [
+        path.join(POSTS_DIRECTORY, normalized),
+        path.join(PUBLIC_POSTS_DIRECTORY, normalized),
+      ];
+
+      let resolvedPath: string | null = null;
+      for (const candidate of candidatePaths) {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          resolvedPath = candidate;
+          break;
+        }
+      }
+
+      if (!resolvedPath) {
+        const hits = [
+          ...findFilesByBasename(POSTS_DIRECTORY, path.basename(normalized)),
+          ...findFilesByBasename(PUBLIC_POSTS_DIRECTORY, path.basename(normalized)),
+        ].sort((a, b) => a.localeCompare(b, "ja"));
+        resolvedPath = hits[0] ?? null;
+      }
+
+      if (!resolvedPath) {
+        const fence = "```";
+        const safeTarget = target.replace(/`/g, "\\`");
+        return {
+          raw,
+          rendered: `${fence}text\n[Obsidian埋め込みの参照先が見つかりません] ${safeTarget}\n${fence}\n`,
+        };
+      }
+
+      const ext = path.extname(resolvedPath).toLowerCase();
+      const relativeForPublic = isInsideDir(resolvedPath, PUBLIC_POSTS_DIRECTORY)
+        ? path.relative(PUBLIC_POSTS_DIRECTORY, resolvedPath).replace(/\\/g, "/")
+        : path.relative(POSTS_DIRECTORY, resolvedPath).replace(/\\/g, "/");
+      const publicSrc = `${basePath}/posts/${encodeURI(relativeForPublic)}`;
+
+      if (IMAGE_EXTS.has(ext)) {
+        const alt = alias || path.basename(resolvedPath, ext);
+        const safeAlt = alt.replace(/"/g, "&quot;");
+        return {
+          raw,
+          rendered: `\n<img src="${publicSrc}" alt="${safeAlt}" loading="lazy" decoding="async" />\n`,
+        };
+      }
+
+      if (ext === ".md") {
+        const content = await fs.promises.readFile(resolvedPath, "utf8");
+        // 埋め込み先が Markdown の場合は、そのままインライン展開する（再帰展開はしない）
+        return { raw, rendered: `\n${content}\n` };
+      }
+
+      if (TEXT_EXTS.has(ext) || ext) {
+        const content = await fs.promises.readFile(resolvedPath, "utf8");
+        const lang = languageFromFilename(resolvedPath);
+        const fence = pickBacktickFence(content, 3);
+        return { raw, rendered: `${fence}${lang}\n${content}\n${fence}\n` };
+      }
+
+      return {
+        raw,
+        rendered: `\n<a href="${publicSrc}" target="_blank" rel="noreferrer noopener">${path.basename(resolvedPath)}</a>\n`,
+      };
+    })
+  );
+
+  const replacementMap = new Map<string, string>();
+  for (const { raw, rendered } of replacements) replacementMap.set(raw, rendered);
+
+  return markdown.replace(EMBED_RE, (raw) => replacementMap.get(raw) ?? raw);
+}
 
 const ALERT_META: Record<
   string,
@@ -3136,6 +3334,16 @@ const SANITIZE_SCHEMA: SanitizeSchema = {
       "className",
       "ariaLabel",
     ],
+    img: [
+      ...(((defaultSchema.attributes as any)?.img as any[]) ?? []),
+      "src",
+      "alt",
+      "title",
+      "loading",
+      "decoding",
+      "width",
+      "height",
+    ],
     code: [
       ...(((defaultSchema.attributes as any)?.code as any[]) ?? []),
       "className",
@@ -3175,7 +3383,8 @@ const SANITIZE_SCHEMA: SanitizeSchema = {
 };
 
 export async function markdownToHtml(markdown: string): Promise<string> {
-  const result = await remark()
+  const expanded = await expandObsidianEmbeds(markdown);
+  const base = remark()
     .use(remarkParse)
     .use(remarkGfm)
     .use(remarkBreaks)
@@ -3197,19 +3406,34 @@ export async function markdownToHtml(markdown: string): Promise<string> {
       },
     })
     .use(rehypeExternalLinks)
-    .use(rehypeMermaidBlocks)
-    .use(rehypePrettyCode, {
-      theme: "github-dark-default",
-      keepBackground: false,
-      defaultLang: "text",
-    })
-    .use(rehypeSanitize, SANITIZE_SCHEMA)
-    .use(rehypeStringify, {
-      allowDangerousHtml: true,
-    })
-    .process(markdown);
+    .use(rehypeMermaidBlocks);
 
-  return result.toString();
+  try {
+    const result = await base
+      .use(rehypePrettyCode, {
+        theme: "github-dark-default",
+        keepBackground: false,
+        defaultLang: "text",
+      })
+      .use(rehypeSanitize, SANITIZE_SCHEMA)
+      .use(rehypeStringify, {
+        allowDangerousHtml: true,
+      })
+      .process(expanded);
+
+    return result.toString();
+  } catch (error) {
+    console.error("rehype-pretty-code failed; fallback to plain code blocks:", error);
+
+    const result = await base
+      .use(rehypeSanitize, SANITIZE_SCHEMA)
+      .use(rehypeStringify, {
+        allowDangerousHtml: true,
+      })
+      .process(expanded);
+
+    return result.toString();
+  }
 }
 
 export type Heading = {
@@ -3381,7 +3605,7 @@ const repo = "Pastel"; // リポジトリ名（GitHub: Vserval/Pastel）
 const projectRoot = path.resolve(process.cwd());
 
 const nextConfig: NextConfig = {
-  output: "export",
+  output: isProd ? "export" : undefined,
   trailingSlash: true,
   images: {
     unoptimized: true,
@@ -3406,8 +3630,10 @@ export default nextConfig;
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/sync-public-posts.mjs",
     "dev": "next dev",
-    "build": "next build",
+    "prebuild": "node scripts/sync-public-posts.mjs",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },
@@ -3446,6 +3672,732 @@ export default nextConfig;
   }
 }
 ```
+
+---
+
+## `posts/.obsidian/app.json`
+
+```json
+{}
+```
+
+---
+
+## `posts/.obsidian/appearance.json`
+
+```json
+{}
+```
+
+---
+
+## `posts/.obsidian/core-plugins.json`
+
+```json
+{
+  "file-explorer": true,
+  "global-search": true,
+  "switcher": true,
+  "graph": true,
+  "backlink": true,
+  "canvas": true,
+  "outgoing-link": true,
+  "tag-pane": true,
+  "footnotes": false,
+  "properties": false,
+  "page-preview": true,
+  "daily-notes": true,
+  "templates": true,
+  "note-composer": true,
+  "command-palette": true,
+  "slash-command": false,
+  "editor-status": true,
+  "bookmarks": true,
+  "markdown-importer": false,
+  "zk-prefixer": false,
+  "random-note": false,
+  "outline": true,
+  "word-count": true,
+  "slides": false,
+  "audio-recorder": false,
+  "workspaces": false,
+  "file-recovery": true,
+  "publish": false,
+  "sync": true,
+  "bases": true,
+  "webviewer": false
+}
+```
+
+---
+
+## `posts/.obsidian/workspace.json`
+
+```json
+{
+  "main": {
+    "id": "ca75442213ef3b6c",
+    "type": "split",
+    "children": [
+      {
+        "id": "1466101eca53ab53",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "b4d7c96694d46544",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Maya/Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "44c0a93a4c69b5ae",
+    "type": "split",
+    "children": [
+      {
+        "id": "a195e863d4b315de",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "5c824facd9f0c5de",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "ファイルエクスプローラ"
+            }
+          },
+          {
+            "id": "7518d7adf6cff25d",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "検索"
+            }
+          },
+          {
+            "id": "5a7c87b3e1b5cc98",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "ブックマーク"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "1a257502f840c4b9",
+    "type": "split",
+    "children": [
+      {
+        "id": "7c1f98cdddd21555",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "1f18bd35684c91ff",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Maya/Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPythonへのバックリンク"
+            }
+          },
+          {
+            "id": "40d367432c6ed04f",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Maya/Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPythonからのアウトゴーイングリンク"
+            }
+          },
+          {
+            "id": "a23a23a4c8df8068",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "タグ"
+            }
+          },
+          {
+            "id": "095de49ab0cdb4fd",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Maya/Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPythonのアウトライン"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:クイックスイッチャーを開く": false,
+      "graph:グラフビューを開く": false,
+      "canvas:新規キャンバスを作成": false,
+      "daily-notes:今日のデイリーノートを開く": false,
+      "templates:テンプレートを挿入": false,
+      "command-palette:コマンドパレットを開く": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "b4d7c96694d46544",
+  "lastOpenFiles": [
+    "スクリーンショット 2026-03-17 165514.avif",
+    "Maya/Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython.md",
+    "自動削除.py",
+    "Maya"
+  ]
+}
+```
+
+---
+
+## `posts/Maya/Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython.md`
+
+````md
+
+![[スクリーンショット 2026-03-17 165514.avif]]
+![[自動削除.py]]
+
+以下に、**スクリプト説明書**としてそのまま使える形でまとめます。  
+`mermaid` と **GitHub アラート構文** を使って、**目的 / 処理フロー / アルゴリズム / 関数ごとの役割 / 注意点**まで整理しました ✨  
+対象スクリプト: `自動削除.py`
+
+---
+
+# Maya スケルトン修復スクリプト説明
+
+## 概要
+
+このスクリプトは、**Maya で joint の親子付け操作の過程で意図せず挿入された余計な transform ノード**を、自動的に修復するためのツールです。
+
+想定している壊れ方は次のような構造です。
+
+```text
+parentJoint
+    insertedTransform   <- 本来いらない中間 transform
+        childJoint
+```
+
+本来は `parentJoint -> childJoint` であるべきところに、  
+**shape を持たない transform ノード**が中間に入り込んでしまった状態を検出し、  
+その transform を削除して、child joint を正しい親へ戻します。
+
+---
+
+## 何を解決するスクリプトか
+
+この種の中間 transform が入ると、次のような問題につながります。
+
+- スケルトン階層が不正になる
+    
+- skinCluster の再利用や調整が難しくなる
+    
+- Freeze Transform や bindPose と整合が取れなくなる
+    
+- リグやエクスポート工程で予期しない不具合が起きる
+    
+
+このスクリプトは、**スキンウェイトを退避してから一度 unbind し、階層を修復後に再 bind とウェイト復元を行う**ことで、安全に骨構造を修復します。
+
+---
+
+## 全体アルゴリズム
+
+このスクリプトの中核アルゴリズムは、次の 7 段階です。
+
+1. 対象ルート joint を決定
+    
+2. 配下の joint をすべて収集
+    
+3. 問題のある中間 transform を検出
+    
+4. 関連する skinCluster のウェイトを XML に退避
+    
+5. skinCluster を unbind し、bindPose を削除
+    
+6. スケルトンを Freeze したうえで、中間 transform を削除して joint を再親子付け
+    
+7. skinCluster を再作成し、ウェイトを復元
+    
+
+---
+
+## 処理フロー
+
+```mermaid
+flowchart TD
+    A[開始] --> B[roots を取得<br>選択jointまたは引数]
+    B --> C[ルート配下の全jointを収集]
+    C --> D[中間transformを検出]
+    D --> E{修復対象あり?}
+    E -- No --> F[何もせず終了]
+    E -- Yes --> G[関連skinClusterを収集]
+    G --> H[ウェイトをXMLへエクスポート]
+    H --> I[skinClusterをunbind]
+    I --> J[bindPose削除]
+    J --> K[全jointをFreeze Transform]
+    K --> L[中間transformを削除し<br>child jointを元の親へre-parent]
+    L --> M[skinCluster再作成]
+    M --> N[ウェイト復元]
+    N --> O[Bind Matrices再計算]
+    O --> P[レポート返却]
+```
+
+---
+
+## このスクリプトが「問題ノード」と判断する条件
+
+`_find_inserted_transforms()` では、中間 transform を次の条件で見つけています。
+
+### 判定条件
+
+- ルート joint 配下の descendant である
+    
+- ノード型が `transform`
+    
+- 親が `joint`
+    
+- shape を持たない
+    
+- 子を持つ
+    
+- 子の中に `joint` がいる
+    
+
+つまり、かなり簡単に言うと：
+
+> **「joint の直下にいて、見た目の実体(shape)はなく、さらに joint をぶら下げている transform」**  
+> を「誤って挿入された中間 transform」とみなしています。
+
+さらに、**深い階層から先に処理する**ために、DAG パスの深さ順で降順ソートしています。  
+これは親側を先に消してしまって階層参照が崩れるのを避けるためです。
+
+---
+
+## 主要アルゴリズム詳細
+
+## 1. 対象 joint の収集
+
+`repair_parent_inserted_transforms()` は、引数 `roots` が未指定なら、**現在選択されている joint** をルートとして使います。
+
+その後 `_unique_existing_long_names()` により、
+
+- 存在しないノードを除外
+    
+- long name に統一
+    
+- 重複除去
+    
+
+を行っています。  
+これにより DAG 上で同名ノードがあっても誤判定しにくくしています。
+
+---
+
+## 2. スキンクラスタの退避
+
+`_collect_related_skin_data()` は、全 `skinCluster` を走査し、  
+その influence の中に対象 joint 群が含まれているものだけを抽出します。
+
+保持している主な情報は次の通りです。
+
+- skinCluster 名
+    
+- export 用 XML ファイル名
+    
+- influences
+    
+- geometry 一覧
+    
+- maximumInfluences
+    
+- normalizeWeights
+    
+- skinningMethod
+    
+- bindMethod
+    
+- dropoffRate
+    
+- maintainMaxInfluences
+    
+
+つまりこの段階で、
+
+> **「あとで同じ条件で skinCluster を再構築するための設定一式」**
+
+を退避しています。
+
+---
+
+## 3. ウェイトのエクスポートと unbind
+
+`_export_and_unbind_skinclusters()` では、各 skinCluster について次を実施します。
+
+- `cmds.deformerWeights(... export=True ...)` で XML 出力
+    
+- `cmds.skinCluster(... unbind=True)` で unbind
+    
+
+この順番が重要で、**先にウェイトを保存してから unbind** することで、  
+スケルトン階層の修復中に skin 情報を失わないようにしています。
+
+> [!IMPORTANT]  
+> スキン付きモデルを壊さずに骨階層だけ直すための、いちばん重要な保護手順です。
+
+---
+
+## 4. bindPose の削除
+
+`_delete_connected_bindposes()` では、対象 joint に接続された `dagPose` を列挙して削除します。
+
+これは、**古い bindPose が残ったままだと再 bind 時に矛盾しやすい**ためです。
+
+> [!NOTE]  
+> bindPose は「元の骨状態」を保持する仕組みですが、今回のように階層自体を修復する場合、古い pose 情報が邪魔になることがあります。
+
+---
+
+## 5. Freeze Transform
+
+`_freeze_skeletons()` は、ルートだけでなく**配下の全 joint** に対して `makeIdentity()` をかけます。
+
+指定は以下です。
+
+- `translate=True`
+    
+- `rotate=True`
+    
+- `scale=True`
+    
+- `jointOrient=False`
+    
+
+つまり、**jointOrient は保持しつつ transform 値を凍結**する方針です。
+
+この段階でスケルトンの状態をできるだけ整理してから、階層修正に入ります。
+
+> [!WARNING]  
+> Freeze に失敗した joint があっても全体処理は継続します。失敗は `cmds.warning()` で通知される実装です。
+
+---
+
+## 6. 中間 transform の修復アルゴリズム
+
+`_repair_inserted_transforms()` が、このスクリプトのコアです。
+
+処理は以下の順です。
+
+### ステップ 1: 元の親 joint を取得
+
+対象 transform の親を取得し、それが `joint` であることを確認します。
+
+### ステップ 2: 子 joint を抽出
+
+transform の子のうち、`joint` 型だけを対象にします。
+
+### ステップ 3: 一旦 world に外す
+
+各 child joint を `cmds.parent(child, world=True)` でワールド直下へ移します。
+
+### ステップ 4: 空になった transform を削除
+
+中間 transform を削除します。
+
+### ステップ 5: 元の親へ relative で戻す
+
+`cmds.parent(child, original_parent, relative=True)` で、元の親 joint に戻します。
+
+### ステップ 6: 再生成された transform の後始末
+
+Maya の再 parent の副作用で transform が再生成された場合に備え、  
+「shape なし」「子がその joint だけ」の transform を中間 transform とみなし、再度除去します。
+
+---
+
+## なぜ `relative=True` を使うのか
+
+コードコメントにもある通り、再親子付け時に `relative=True` を使うことで、  
+**余計な transform の再生成をできるだけ防ぐ**狙いがあります。
+
+これは Maya の parent 操作で局所変換を合わせようとして  
+自動的に transform が挟まるケースへの対策です。
+
+```mermaid
+sequenceDiagram
+    participant P as parentJoint
+    participant T as insertedTransform
+    participant C as childJoint
+
+    P->>T: 親子構造
+    T->>C: 子jointを保持
+
+    Note over C: child を一旦 world へ退避
+    C->>C: parent(world=True)
+
+    Note over T: 空になった transform を削除
+    T-->>T: delete
+
+    Note over C,P: relative=True で元の親へ戻す
+    C->>P: parent(relative=True)
+
+    Note over P,C: 必要なら再生成transformも除去
+```
+
+---
+
+## 7. skinCluster の再作成とウェイト復元
+
+`_rebind_and_restore_weights()` では、退避済みの情報を使って skinCluster を再構築します。
+
+### 再 bind 時に使う主な設定
+
+- `ignoreBindPose=True`
+    
+- `maximumInfluences`
+    
+- `obeyMaxInfluences`
+    
+- `normalizeWeights`
+    
+- `skinMethod`
+    
+- `bindMethod`
+    
+- `dropoffRate`
+    
+
+まず 1 つ目の geometry で skinCluster を作成し、  
+複数 geometry がある場合は追加で接続しています。
+
+その後、
+
+- `deformerWeights(... im=True ...)` で XML からウェイト復元
+    
+- `recacheBindMatrices=True` で bind matrix 再計算
+    
+
+を行います。
+
+> [!TIP]  
+> この設計により、「骨階層の修正」と「ウェイト復元」が分離されていて、処理の見通しが良くなっています。
+
+---
+
+# 関数一覧と役割
+
+|関数名|役割|
+|---|---|
+|`repair_parent_inserted_transforms()`|全体制御。対象取得から修復・再 bind・レポート返却まで実行|
+|`_unique_existing_long_names()`|long name 化、存在確認、重複除去|
+|`_collect_joints_from_roots()`|ルート配下の全 joint を収集|
+|`_find_inserted_transforms()`|問題の中間 transform を検出|
+|`_collect_related_skin_data()`|関連 skinCluster の設定を収集|
+|`_export_and_unbind_skinclusters()`|ウェイト保存と unbind|
+|`_delete_connected_bindposes()`|接続された bindPose を削除|
+|`_freeze_skeletons()`|配下 joint 全体を Freeze Transform|
+|`_repair_inserted_transforms()`|中間 transform を除去して joint を再 parent|
+|`_rebind_and_restore_weights()`|skinCluster 再作成とウェイト復元|
+
+この分割により、**検出・退避・修復・復元**が明確に責務分離されています。
+
+---
+
+# レポート出力
+
+関数の戻り値 `report` には、少なくとも以下が入ります。
+
+- `roots`
+    
+- `skinClusters`
+    
+- `repairedTransforms`
+    
+- `weightDir`
+    
+
+これにより、呼び出し元で
+
+- どのルートを処理したか
+    
+- どの skinCluster に影響したか
+    
+- どの transform を修復したか
+    
+- 一時ウェイト保存先はどこか
+    
+
+を追跡できます。
+
+---
+
+# このスクリプトのアルゴリズムを一言で言うと
+
+> **「不正な中間 transform を検出し、skin 情報を退避したうえでスケルトン階層を安全に再構築するアルゴリズム」** です。
+
+より厳密には、
+
+1. **構造検出アルゴリズム**  
+    `joint -> transform(no shape) -> joint` をパターン検出
+    
+2. **安全修復アルゴリズム**  
+    ウェイト退避 → unbind → bindPose削除 → freeze → transform除去 → 再親子付け
+    
+3. **復元アルゴリズム**  
+    旧 skinCluster 設定を再利用しつつ再 bind、ウェイト再インポート
+    
+
+の 3 層構成になっています。
+
+---
+
+# 長所
+
+> [!NOTE]  
+> このスクリプトの良い点
+
+- **skin を保持したまま階層修復できる**
+    
+- **長い DAG 名で管理しているため安全性が高い**
+    
+- **深い階層から処理して壊れにくい**
+    
+- **一時ディレクトリを使ってウェイト管理を自動化**
+    
+- **undo chunk でまとめているので Maya 上で扱いやすい**
+    
+
+---
+
+# 注意点・制約
+
+> [!WARNING]  
+> このスクリプトはかなり実用的ですが、いくつか前提があります。
+
+### 1. 問題 transform の定義はヒューリスティック
+
+「shape がなく」「親が joint で」「子に joint がいる」という条件で判定しているため、  
+**意図的に挟んでいる transform も修復対象に入る可能性**があります。
+
+### 2. ウェイト復元は index ベース
+
+`deformerWeights(... method='index')` を使っているため、  
+トポロジやジオメトリ状態が変わっていると完全一致しない可能性があります。
+
+### 3. Freeze の副作用に注意
+
+joint に対する `makeIdentity()` は、シーンやリグの設計によっては意図しない変化を生む場合があります。
+
+### 4. bindPose はまとめて削除
+
+対象 joint に関連する `dagPose` を削除するため、  
+他の用途と共有されている場合は慎重に使う必要があります。
+
+---
+
+# GitHub README 向けの短い説明文
+
+以下は README に載せやすい短縮版です。
+
+## 説明
+
+このスクリプトは、Maya の joint 親子構造の中に誤って挿入された中間 transform を自動検出し、  
+skinCluster のウェイトを退避したうえで階層を修復し、最後に skin を再構築してウェイトを復元します。  
+対象は主に次のような壊れ方です。
+
+```text
+parentJoint
+    insertedTransform
+        childJoint
+```
+
+## アルゴリズム
+
+```mermaid
+flowchart LR
+    A[検出] --> B[ウェイト退避]
+    B --> C[unbind]
+    C --> D[bindPose削除]
+    D --> E[Freeze Transform]
+    E --> F[中間transform削除]
+    F --> G[re-parent]
+    G --> H[再bind]
+    H --> I[ウェイト復元]
+```
+
+> [!IMPORTANT]  
+> skin 情報を保持したまま骨階層だけを安全に修復するのが目的です。
+
+---
+
+必要であれば次に、**この内容をそのまま GitHub README.md 形式に整形した版**も作れます 😊
+````
 
 ---
 
@@ -4112,6 +5064,489 @@ classDiagram
 * [Working with advanced formatting](/en/get-started/writing-on-github/working-with-advanced-formatting)
 * [Quickstart for writing on GitHub](/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/quickstart-for-writing-on-github)
 `````
+
+---
+
+## `posts/自動削除.py`
+
+```python
+# -*- coding: utf-8 -*-
+import os
+import re
+import shutil
+import tempfile
+import traceback
+
+import maya.cmds as cmds
+
+
+def repair_parent_inserted_transforms(
+    roots=None,
+    cleanup_weight_files=True,
+    verbose=True,
+):
+    """
+    Maya の joint-parent 時に挿入された余計な transform を自動修復します。
+
+    想定している壊れ方:
+        parentJoint
+            insertedTransform   <- これを削除したい
+                childJoint
+
+    処理:
+        1) 対象スケルトンに影響している skinCluster のウェイトを退避
+        2) unbind
+        3) bindPose を削除
+        4) スケルトン全体を Freeze Transform
+        5) 余計な transform を除去し、joint を元の親へ re-parent
+        6) skinCluster を再作成
+        7) ウェイトを復元
+
+    使い方:
+        - ルート joint を選択して実行
+        - または roots=["|root_jnt"] のように明示指定
+    """
+    if roots is None:
+        roots = cmds.ls(sl=True, long=True, type='joint') or []
+
+    roots = _unique_existing_long_names(roots)
+    if not roots:
+        raise RuntimeError(u'ルート joint を選択してください。')
+
+    report = {
+        "roots": roots,
+        "skinClusters": [],
+        "repairedTransforms": [],
+        "weightDir": None,
+    }
+
+    temp_dir = tempfile.mkdtemp(prefix="maya_skel_repair_")
+    report["weightDir"] = temp_dir
+
+    try:
+        cmds.undoInfo(openChunk=True, chunkName='repair_parent_inserted_transforms')
+
+        all_joints = _collect_joints_from_roots(roots)
+        bad_transforms = _find_inserted_transforms(roots)
+
+        if verbose:
+            print(u'[INFO] joints: {}'.format(len(all_joints)))
+            print(u'[INFO] inserted transforms: {}'.format(len(bad_transforms)))
+
+        if not bad_transforms:
+            if verbose:
+                print(u'[INFO] 修正対象の transform は見つかりませんでした。')
+            return report
+
+        skin_data = _collect_related_skin_data(all_joints)
+        report["skinClusters"] = [d["skinCluster"] for d in skin_data]
+
+        if verbose:
+            print(u'[INFO] related skinClusters: {}'.format(len(skin_data)))
+
+        _export_and_unbind_skinclusters(skin_data, temp_dir, verbose=verbose)
+        _delete_connected_bindposes(all_joints, verbose=verbose)
+        _freeze_skeletons(roots, verbose=verbose)
+
+        repaired = _repair_inserted_transforms(bad_transforms, verbose=verbose)
+        report["repairedTransforms"] = repaired
+
+        _rebind_and_restore_weights(skin_data, temp_dir, verbose=verbose)
+
+        if verbose:
+            print(u'[DONE] 修復完了')
+            print(u'  repaired transforms : {}'.format(len(repaired)))
+            print(u'  restored skinClusters: {}'.format(len(skin_data)))
+
+        return report
+
+    except Exception:
+        traceback.print_exc()
+        raise
+    finally:
+        try:
+            cmds.undoInfo(closeChunk=True)
+        except Exception:
+            pass
+
+        if cleanup_weight_files and report["weightDir"] and os.path.isdir(report["weightDir"]):
+            shutil.rmtree(report["weightDir"], ignore_errors=True)
+
+
+def _unique_existing_long_names(nodes):
+    result = []
+    seen = set()
+    for n in nodes or []:
+        if not cmds.objExists(n):
+            continue
+        long_name = cmds.ls(n, long=True) or []
+        if not long_name:
+            continue
+        long_name = long_name[0]
+        if long_name in seen:
+            continue
+        seen.add(long_name)
+        result.append(long_name)
+    return result
+
+
+def _collect_joints_from_roots(roots):
+    joints = []
+    for root in roots:
+        if cmds.nodeType(root) != 'joint':
+            continue
+        joints.append(root)
+        descendants = cmds.listRelatives(root, ad=True, fullPath=True, type='joint') or []
+        joints.extend(descendants)
+    return _unique_existing_long_names(joints)
+
+
+def _find_inserted_transforms(roots):
+    """
+    joint の下にある「shape を持たない transform」で、
+    子に joint を持つものを中間 transform とみなして返す。
+    深い階層から処理するため、パス深度の降順で返す。
+    """
+    candidates = []
+
+    for root in roots:
+        if not cmds.objExists(root):
+            continue
+
+        descendants = cmds.listRelatives(root, ad=True, fullPath=True, type='transform') or []
+        for node in descendants:
+            if not cmds.objExists(node):
+                continue
+            if cmds.nodeType(node) != 'transform':
+                continue
+
+            parent = cmds.listRelatives(node, parent=True, fullPath=True) or []
+            if not parent:
+                continue
+            if cmds.nodeType(parent[0]) != 'joint':
+                continue
+
+            shapes = cmds.listRelatives(node, shapes=True, fullPath=True) or []
+            if shapes:
+                continue
+
+            children = cmds.listRelatives(node, children=True, fullPath=True) or []
+            if not children:
+                continue
+
+            joint_children = [c for c in children if cmds.nodeType(c) == 'joint']
+            if not joint_children:
+                continue
+
+            candidates.append(node)
+
+    candidates = _unique_existing_long_names(candidates)
+    candidates.sort(key=lambda x: x.count('|'), reverse=True)
+    return candidates
+
+
+def _collect_related_skin_data(joints):
+    joint_set = set(_unique_existing_long_names(joints))
+    data = []
+
+    for sc in cmds.ls(type='skinCluster') or []:
+        sc_long = (cmds.ls(sc, long=True) or [sc])[0]
+
+        try:
+            influences = cmds.skinCluster(sc_long, q=True, influence=True) or []
+        except Exception:
+            continue
+
+        influences = _unique_existing_long_names(influences)
+        if not any(inf in joint_set for inf in influences):
+            continue
+
+        geos = cmds.skinCluster(sc_long, q=True, geometry=True) or []
+        if not geos:
+            continue
+
+        geo_transforms = []
+        for g in geos:
+            if not cmds.objExists(g):
+                continue
+            if cmds.nodeType(g) in ('mesh', 'nurbsSurface', 'nurbsCurve', 'lattice'):
+                parents = cmds.listRelatives(g, parent=True, fullPath=True) or []
+                geo_transforms.append(parents[0] if parents else g)
+            else:
+                geo_transforms.append((cmds.ls(g, long=True) or [g])[0])
+
+        item = {
+            "skinCluster": sc_long,
+            "skinClusterShort": sc,
+            "fileName": _safe_file_name(sc) + ".xml",
+            "influences": influences,
+            "geometries": _unique_existing_long_names(geo_transforms),
+            "maxInfluences": _safe_get_skin_attr(sc_long, "maximumInfluences", 5),
+            "normalizeWeights": _safe_get_skin_attr(sc_long, "normalizeWeights", 1),
+            "skinningMethod": _safe_get_attr(sc_long + ".skinningMethod", 0),
+            "bindMethod": _safe_get_attr(sc_long + ".bindMethod", 0),
+            "dropoffRate": _safe_get_attr(sc_long + ".dropoffRate", 4.0),
+            "maintainMaxInfluences": _safe_get_attr(sc_long + ".maintainMaxInfluences", 0),
+        }
+        data.append(item)
+
+    return data
+
+
+def _safe_get_skin_attr(skin_cluster, query_flag, default):
+    try:
+        return cmds.skinCluster(skin_cluster, q=True, **{query_flag: True})
+    except Exception:
+        return default
+
+
+def _safe_get_attr(attr, default):
+    try:
+        return cmds.getAttr(attr)
+    except Exception:
+        return default
+
+
+def _safe_file_name(name):
+    short_name = name.split('|')[-1]
+    return re.sub(r'[^0-9A-Za-z_.-]+', '_', short_name)
+
+
+def _export_and_unbind_skinclusters(skin_data, temp_dir, verbose=True):
+    for item in skin_data:
+        sc = item["skinCluster"]
+        file_name = item["fileName"]
+
+        if verbose:
+            print(u'[EXPORT] {} -> {}'.format(sc, file_name))
+
+        cmds.deformerWeights(
+            file_name,
+            export=True,
+            deformer=sc,
+            path=temp_dir,
+            format='XML',
+            defaultValue=-1.0,
+            weightPrecision=8,
+        )
+
+        cmds.skinCluster(sc, e=True, unbind=True)
+
+
+def _delete_connected_bindposes(joints, verbose=True):
+    bindposes = cmds.ls(cmds.listConnections(joints, type='dagPose') or [], long=True) or []
+    bindposes = list(sorted(set(bindposes)))
+    if not bindposes:
+        return
+
+    if verbose:
+        print(u'[DELETE] bindPoses: {}'.format(len(bindposes)))
+
+    try:
+        cmds.delete(bindposes)
+    except Exception:
+        pass
+
+
+def _freeze_skeletons(roots, verbose=True):
+    """
+    ルートだけでなく配下 joint 全体に対して Freeze を実行する。
+    """
+    all_joints = _collect_joints_from_roots(roots)
+
+    if verbose:
+        print(u'[FREEZE] joints: {}'.format(len(all_joints)))
+
+    for jnt in all_joints:
+        if not cmds.objExists(jnt):
+            continue
+        try:
+            cmds.makeIdentity(
+                jnt,
+                apply=True,
+                translate=True,
+                rotate=True,
+                scale=True,
+                jointOrient=False,
+            )
+        except Exception as e:
+            cmds.warning(u'Freeze失敗: {} / {}'.format(jnt, e))
+
+
+def _repair_inserted_transforms(bad_transforms, verbose=True):
+    """
+    中間 transform を削除し、子 joint を元の親 joint に戻す。
+    再ペアレント時は relative=True を使い、transform の再生成を防ぐ。
+    """
+    repaired = []
+
+    for tr in bad_transforms:
+        if not cmds.objExists(tr):
+            continue
+        if cmds.nodeType(tr) != 'transform':
+            continue
+
+        parent = cmds.listRelatives(tr, parent=True, fullPath=True) or []
+        if not parent:
+            continue
+
+        original_parent = parent[0]
+        if not cmds.objExists(original_parent):
+            continue
+        if cmds.nodeType(original_parent) != 'joint':
+            continue
+
+        children = cmds.listRelatives(tr, children=True, fullPath=True) or []
+        if not children:
+            continue
+
+        # 主に joint を対象にする
+        target_children = [c for c in children if cmds.objExists(c) and cmds.nodeType(c) == 'joint']
+        if not target_children:
+            continue
+
+        if verbose:
+            print(u'[REPAIR] delete inserted transform: {}'.format(tr))
+
+        detached_children = []
+
+        # まず world に外す
+        for child in target_children:
+            try:
+                new_child = cmds.parent(child, world=True)[0]
+                new_child = (cmds.ls(new_child, long=True) or [new_child])[0]
+                detached_children.append(new_child)
+            except Exception as e:
+                cmds.warning(u'world への解除に失敗: {} / {}'.format(child, e))
+
+        # 空になった transform を削除
+        if cmds.objExists(tr):
+            try:
+                cmds.delete(tr)
+            except Exception as e:
+                cmds.warning(u'transform 削除失敗: {} / {}'.format(tr, e))
+                continue
+
+        # 元の joint に relative で戻す
+        reparented_children = []
+        for child in detached_children:
+            if not cmds.objExists(child):
+                continue
+            try:
+                new_child = cmds.parent(child, original_parent, relative=True)[0]
+                new_child = (cmds.ls(new_child, long=True) or [new_child])[0]
+                reparented_children.append(new_child)
+            except Exception as e:
+                cmds.warning(u're-parent 失敗: {} -> {} / {}'.format(child, original_parent, e))
+
+        # 念のため、もし再生成された transform があれば潰す
+        for child in reparented_children:
+            if not cmds.objExists(child):
+                continue
+
+            current_parent = cmds.listRelatives(child, parent=True, fullPath=True) or []
+            if not current_parent:
+                continue
+
+            p = current_parent[0]
+            if cmds.nodeType(p) != 'transform':
+                continue
+
+            pp = cmds.listRelatives(p, parent=True, fullPath=True) or []
+            if not pp:
+                continue
+
+            if pp[0] != original_parent:
+                continue
+
+            shapes = cmds.listRelatives(p, shapes=True, fullPath=True) or []
+            siblings = cmds.listRelatives(p, children=True, fullPath=True) or []
+
+            # shape なし、子がこの joint だけなら中間 transform と判断して削除
+            if not shapes and len(siblings) == 1 and siblings[0] == child:
+                try:
+                    temp = cmds.parent(child, world=True)[0]
+                    temp = (cmds.ls(temp, long=True) or [temp])[0]
+
+                    if cmds.objExists(p):
+                        cmds.delete(p)
+
+                    cmds.parent(temp, original_parent, relative=True)
+                except Exception as e:
+                    cmds.warning(u'再生成 transform の除去失敗: {} / {}'.format(p, e))
+
+        repaired.append(tr)
+
+    return repaired
+
+
+def _rebind_and_restore_weights(skin_data, temp_dir, verbose=True):
+    for item in skin_data:
+        influences = [i for i in item["influences"] if cmds.objExists(i)]
+        geometries = [g for g in item["geometries"] if cmds.objExists(g)]
+
+        if not influences or not geometries:
+            cmds.warning(
+                u'{} は influence または geometry が見つからないためスキップしました。'.format(
+                    item["skinClusterShort"]
+                )
+            )
+            continue
+
+        bind_kwargs = dict(
+            ignoreBindPose=True,
+            maximumInfluences=int(item["maxInfluences"]) if item["maxInfluences"] is not None else 5,
+            obeyMaxInfluences=bool(item["maintainMaxInfluences"]),
+            normalizeWeights=int(item["normalizeWeights"]) if item["normalizeWeights"] is not None else 1,
+            skinMethod=int(item["skinningMethod"]) if item["skinningMethod"] is not None else 0,
+            bindMethod=int(item["bindMethod"]) if item["bindMethod"] is not None else 0,
+            dropoffRate=float(item["dropoffRate"]) if item["dropoffRate"] is not None else 4.0,
+        )
+
+        try:
+            new_sc = cmds.skinCluster(
+                influences,
+                geometries[0],
+                name=item["skinClusterShort"],
+                **bind_kwargs
+            )[0]
+        except Exception:
+            new_sc = cmds.skinCluster(
+                influences,
+                geometries[0],
+                **bind_kwargs
+            )[0]
+
+        if len(geometries) > 1:
+            for extra_geo in geometries[1:]:
+                try:
+                    cmds.skinCluster(new_sc, e=True, geometry=extra_geo)
+                except Exception:
+                    cmds.warning(u'追加 geometry の再接続に失敗: {}'.format(extra_geo))
+
+        if verbose:
+            print(u'[IMPORT] {} <- {}'.format(new_sc, item["fileName"]))
+
+        cmds.deformerWeights(
+            item["fileName"],
+            im=True,
+            deformer=new_sc,
+            path=temp_dir,
+            method='index',
+        )
+
+        try:
+            cmds.skinCluster(new_sc, e=True, recacheBindMatrices=True)
+        except Exception:
+            pass
+
+
+# 実行例:
+# 1) ルート joint を選択
+# 2) 下を実行
+report = repair_parent_inserted_transforms()
+print(report)
+```
 
 ---
 

@@ -11,6 +11,9 @@ import rehypePrettyCode from "rehype-pretty-code";
 import rehypeStringify from "rehype-stringify";
 import GithubSlugger from "github-slugger";
 import { visit } from "unist-util-visit";
+import fs from "node:fs";
+import path from "node:path";
+import { basePath } from "@/lib/site";
 import type {
   Root as HastRoot,
   Element as HastElement,
@@ -19,6 +22,181 @@ import type {
 import type { Root as MdastRoot, Blockquote, Paragraph, Text } from "mdast";
 
 type SanitizeSchema = NonNullable<Parameters<typeof rehypeSanitize>[0]>;
+
+const POSTS_DIRECTORY = path.join(process.cwd(), "posts");
+const PUBLIC_POSTS_DIRECTORY = path.join(process.cwd(), "public", "posts");
+
+function isInsideDir(filePath: string, dirPath: string): boolean {
+  const rel = path.relative(dirPath, filePath);
+  return !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+function languageFromFilename(filename: string): string {
+  const ext = path.extname(filename).toLowerCase().replace(/^\./, "");
+  switch (ext) {
+    case "py":
+      return "python";
+    case "js":
+      return "javascript";
+    case "jsx":
+      return "jsx";
+    case "ts":
+      return "typescript";
+    case "tsx":
+      return "tsx";
+    case "sh":
+      return "bash";
+    case "ps1":
+      return "powershell";
+    case "json":
+      return "json";
+    case "yml":
+    case "yaml":
+      return "yaml";
+    case "md":
+      return "markdown";
+    default:
+      return ext || "text";
+  }
+}
+
+function pickBacktickFence(body: string, minLen = 3): string {
+  let longest = 0;
+  for (const match of body.matchAll(/`+/g)) {
+    longest = Math.max(longest, match[0].length);
+  }
+  return "`".repeat(Math.max(minLen, longest + 1));
+}
+
+function findFilesByBasename(dir: string, basename: string): string[] {
+  const results: string[] = [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...findFilesByBasename(fullPath, basename));
+      continue;
+    }
+    if (entry.isFile() && entry.name === basename) {
+      results.push(fullPath);
+    }
+  }
+
+  return results;
+}
+
+async function expandObsidianEmbeds(markdown: string): Promise<string> {
+  // Obsidian embed syntax: ![[path/to/file.ext]] or ![[file.ext|alias]]
+  const EMBED_RE = /!\[\[([^\]\|]+?)(?:\|([^\]]+))?\]\]/g;
+  const IMAGE_EXTS = new Set([
+    ".avif",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif",
+    ".svg",
+  ]);
+  const TEXT_EXTS = new Set([
+    ".txt",
+    ".md",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".json",
+    ".yml",
+    ".yaml",
+    ".sh",
+    ".ps1",
+    ".py",
+    ".html",
+    ".css",
+    ".xml",
+  ]);
+
+  const matches = Array.from(markdown.matchAll(EMBED_RE));
+  if (matches.length === 0) return markdown;
+
+  const replacements = await Promise.all(
+    matches.map(async (match) => {
+      const raw = match[0];
+      const target = (match[1] ?? "").trim();
+      const alias = (match[2] ?? "").trim();
+      if (!target) return { raw, rendered: raw };
+
+      const normalized = target.replace(/^\.?[\\/]+/, "").replace(/\\/g, "/");
+      const candidatePaths = [
+        path.join(POSTS_DIRECTORY, normalized),
+        path.join(PUBLIC_POSTS_DIRECTORY, normalized),
+      ];
+
+      let resolvedPath: string | null = null;
+      for (const candidate of candidatePaths) {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          resolvedPath = candidate;
+          break;
+        }
+      }
+
+      if (!resolvedPath) {
+        const hits = [
+          ...findFilesByBasename(POSTS_DIRECTORY, path.basename(normalized)),
+          ...findFilesByBasename(PUBLIC_POSTS_DIRECTORY, path.basename(normalized)),
+        ].sort((a, b) => a.localeCompare(b, "ja"));
+        resolvedPath = hits[0] ?? null;
+      }
+
+      if (!resolvedPath) {
+        const fence = "```";
+        const safeTarget = target.replace(/`/g, "\\`");
+        return {
+          raw,
+          rendered: `${fence}text\n[Obsidian埋め込みの参照先が見つかりません] ${safeTarget}\n${fence}\n`,
+        };
+      }
+
+      const ext = path.extname(resolvedPath).toLowerCase();
+      const relativeForPublic = isInsideDir(resolvedPath, PUBLIC_POSTS_DIRECTORY)
+        ? path.relative(PUBLIC_POSTS_DIRECTORY, resolvedPath).replace(/\\/g, "/")
+        : path.relative(POSTS_DIRECTORY, resolvedPath).replace(/\\/g, "/");
+      const publicSrc = `${basePath}/posts/${encodeURI(relativeForPublic)}`;
+
+      if (IMAGE_EXTS.has(ext)) {
+        const alt = alias || path.basename(resolvedPath, ext);
+        const safeAlt = alt.replace(/"/g, "&quot;");
+        return {
+          raw,
+          rendered: `\n<img src="${publicSrc}" alt="${safeAlt}" loading="lazy" decoding="async" />\n`,
+        };
+      }
+
+      if (ext === ".md") {
+        const content = await fs.promises.readFile(resolvedPath, "utf8");
+        // 埋め込み先が Markdown の場合は、そのままインライン展開する（再帰展開はしない）
+        return { raw, rendered: `\n${content}\n` };
+      }
+
+      if (TEXT_EXTS.has(ext) || ext) {
+        const content = await fs.promises.readFile(resolvedPath, "utf8");
+        const lang = languageFromFilename(resolvedPath);
+        const fence = pickBacktickFence(content, 3);
+        return { raw, rendered: `${fence}${lang}\n${content}\n${fence}\n` };
+      }
+
+      return {
+        raw,
+        rendered: `\n<a href="${publicSrc}" target="_blank" rel="noreferrer noopener">${path.basename(resolvedPath)}</a>\n`,
+      };
+    })
+  );
+
+  const replacementMap = new Map<string, string>();
+  for (const { raw, rendered } of replacements) replacementMap.set(raw, rendered);
+
+  return markdown.replace(EMBED_RE, (raw) => replacementMap.get(raw) ?? raw);
+}
 
 const ALERT_META: Record<
   string,
@@ -278,6 +456,16 @@ const SANITIZE_SCHEMA: SanitizeSchema = {
       "className",
       "ariaLabel",
     ],
+    img: [
+      ...(((defaultSchema.attributes as any)?.img as any[]) ?? []),
+      "src",
+      "alt",
+      "title",
+      "loading",
+      "decoding",
+      "width",
+      "height",
+    ],
     code: [
       ...(((defaultSchema.attributes as any)?.code as any[]) ?? []),
       "className",
@@ -317,7 +505,8 @@ const SANITIZE_SCHEMA: SanitizeSchema = {
 };
 
 export async function markdownToHtml(markdown: string): Promise<string> {
-  const result = await remark()
+  const expanded = await expandObsidianEmbeds(markdown);
+  const base = remark()
     .use(remarkParse)
     .use(remarkGfm)
     .use(remarkBreaks)
@@ -339,19 +528,34 @@ export async function markdownToHtml(markdown: string): Promise<string> {
       },
     })
     .use(rehypeExternalLinks)
-    .use(rehypeMermaidBlocks)
-    .use(rehypePrettyCode, {
-      theme: "github-dark-default",
-      keepBackground: false,
-      defaultLang: "text",
-    })
-    .use(rehypeSanitize, SANITIZE_SCHEMA)
-    .use(rehypeStringify, {
-      allowDangerousHtml: true,
-    })
-    .process(markdown);
+    .use(rehypeMermaidBlocks);
 
-  return result.toString();
+  try {
+    const result = await base
+      .use(rehypePrettyCode, {
+        theme: "github-dark-default",
+        keepBackground: false,
+        defaultLang: "text",
+      })
+      .use(rehypeSanitize, SANITIZE_SCHEMA)
+      .use(rehypeStringify, {
+        allowDangerousHtml: true,
+      })
+      .process(expanded);
+
+    return result.toString();
+  } catch (error) {
+    console.error("rehype-pretty-code failed; fallback to plain code blocks:", error);
+
+    const result = await base
+      .use(rehypeSanitize, SANITIZE_SCHEMA)
+      .use(rehypeStringify, {
+        allowDangerousHtml: true,
+      })
+      .process(expanded);
+
+    return result.toString();
+  }
 }
 
 export type Heading = {

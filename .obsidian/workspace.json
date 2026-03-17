@@ -1,0 +1,190 @@
+{
+  "main": {
+    "id": "52f5bf7415daaa72",
+    "type": "split",
+    "children": [
+      {
+        "id": "6b4a28a8742f4aae",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "bd8a0dcb867ae0db",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "posts/Maya/Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "d7acf373e38e97b3",
+    "type": "split",
+    "children": [
+      {
+        "id": "2a0d792fa5cd9fac",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "f7cfac5433ce45c4",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "ファイルエクスプローラ"
+            }
+          },
+          {
+            "id": "7684f28035f1ce17",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "検索"
+            }
+          },
+          {
+            "id": "e5d16542886f2bb5",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "ブックマーク"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "c327afc73d39e5ba",
+    "type": "split",
+    "children": [
+      {
+        "id": "def820bf620f63e2",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "ca9e676314a7501a",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "posts/Maya/Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPythonへのバックリンク"
+            }
+          },
+          {
+            "id": "06dd8c50f1c08f84",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "posts/Maya/Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPythonからのアウトゴーイングリンク"
+            }
+          },
+          {
+            "id": "26c0ad5ccdb13116",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "タグ"
+            }
+          },
+          {
+            "id": "a50030b81676e28e",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "posts/Maya/Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPythonのアウトライン"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:クイックスイッチャーを開く": false,
+      "graph:グラフビューを開く": false,
+      "canvas:新規キャンバスを作成": false,
+      "daily-notes:今日のデイリーノートを開く": false,
+      "templates:テンプレートを挿入": false,
+      "command-palette:コマンドパレットを開く": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "bd8a0dcb867ae0db",
+  "lastOpenFiles": [
+    "out/_next/static/2ARr8iupWIOpGFns0qM-S/_ssgManifest.js",
+    "out/_next/static/2ARr8iupWIOpGFns0qM-S/_buildManifest.js",
+    "out/_next/static/2ARr8iupWIOpGFns0qM-S",
+    "out/_next/static/chunks/main-app-aedfab722e4d39c6.js",
+    "out/_next/static/chunks/framework-81b2e59ffe13bb24.js",
+    "out/_next/static/chunks/d3ac728e.d1ae8819b8f0be6a.js",
+    "out/_next/static/chunks/app/docs/[...slug]/page-6610d901e0e7f64f.js",
+    "out/_next/static/chunks/app/_global-error/page-26287a6e4941226d.js",
+    "out/_next/static/chunks/app/_not-found/page-d3e5688d135b3e7a.js",
+    "out/_next/static/chunks/app/docs/page-74adf8e15c3f47bc.js",
+    "out/_next/static/chunks/app/docs/[...slug]",
+    "out/posts/スクリーンショット 2026-03-17 165514.avif",
+    "out/window.svg",
+    "public/posts/スクリーンショット 2026-03-17 165514.avif",
+    "posts/Maya/Maya ジョイントをペアレントしたとき勝手にできるTransformノードを削除するPython.md"
+  ]
+}

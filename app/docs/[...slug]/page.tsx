@@ -4,6 +4,14 @@ import { extractHeadings, markdownToHtml } from "@/lib/markdown";
 import { DocsLayout } from "@/components/docs-layout";
 import type { Metadata } from "next";
 
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export function generateStaticParams() {
   return getPosts().map((post) => ({
     slug: post.slug,
@@ -16,7 +24,8 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const post = getPostBySlug(Array.isArray(slug) ? slug : [slug]);
+  const slugParts = (Array.isArray(slug) ? slug : [slug]).map(safeDecodeURIComponent);
+  const post = getPostBySlug(slugParts);
   if (!post) return {};
 
   const title = `${post.title} | My Docs`;
@@ -51,16 +60,26 @@ function formatDate(dateString?: string): string | null {
 
 export default async function DocPage({ params }: Props) {
   const { slug } = await params;
+  const slugParts = (Array.isArray(slug) ? slug : [slug]).map(safeDecodeURIComponent);
 
   const posts = getPosts();
-  const slugPath = Array.isArray(slug) ? slug.join("/") : slug;
+  const slugPath = slugParts.join("/");
   const exists = posts.some((post) => post.slugAsPath === slugPath);
   if (!exists) notFound();
 
-  const post = getPostBySlug(Array.isArray(slug) ? slug : [slug]);
+  const post = getPostBySlug(slugParts);
   if (!post) notFound();
 
-  const contentHtml = await markdownToHtml(post.content);
+  let contentHtml = "";
+  try {
+    contentHtml = await markdownToHtml(post.content);
+  } catch (error) {
+    console.error("markdownToHtml failed:", {
+      slug: post.slugAsPath,
+      error,
+    });
+    contentHtml = "<pre>render error</pre>";
+  }
   const headings = extractHeadings(post.content);
   const formattedDate = formatDate(post.date);
 

@@ -284,17 +284,14 @@ export function DocsLayout({
                 </Link>
               </li>
               {segments.map((segment, index) => {
-                const href = `/docs/${segments.slice(0, index + 1).join("/")}/`;
                 const isLast = index === segments.length - 1;
 
                 return (
-                  <li key={href}>
+                  <li key={`${index}-${segment}`}>
                     {isLast ? (
                       <span aria-current="page">{segment}</span>
                     ) : (
-                      <Link href={href} prefetch={false}>
-                        {segment}
-                      </Link>
+                      <span>{segment}</span>
                     )}
                   </li>
                 );

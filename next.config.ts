@@ -8,7 +8,7 @@ const repo = "Pastel"; // リポジトリ名（GitHub: Vserval/Pastel）
 const projectRoot = path.resolve(process.cwd());
 
 const nextConfig: NextConfig = {
-  output: "export",
+  output: isProd ? "export" : undefined,
   trailingSlash: true,
   images: {
     unoptimized: true,
