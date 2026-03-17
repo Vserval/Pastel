@@ -1410,20 +1410,29 @@ a {
 }
 
 .markdown-body .heading-anchor {
+  display: inline-block;
   margin-left: 6px;
   color: var(--muted);
   font-size: 0.85em;
   text-decoration: none;
   opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   transition:
     opacity 0.12s ease-out,
-    color 0.12s ease-out;
+    color 0.12s ease-out,
+    visibility 0.12s ease-out;
 }
 
 .markdown-body h2:hover .heading-anchor,
 .markdown-body h3:hover .heading-anchor,
-.markdown-body h4:hover .heading-anchor {
+.markdown-body h4:hover .heading-anchor,
+.markdown-body h2:focus-within .heading-anchor,
+.markdown-body h3:focus-within .heading-anchor,
+.markdown-body h4:focus-within .heading-anchor {
   opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
   color: var(--accent);
 }
 
@@ -2300,18 +2309,25 @@ export function DocsLayout({
   };
 
   useEffect(() => {
-    const figures = Array.from(
+    const nodes = Array.from(
       document.querySelectorAll<HTMLElement>(
         ".markdown-body [data-rehype-pretty-code-figure], .markdown-body pre"
       )
     );
 
-    figures.forEach((figure) => {
-      if (figure.dataset.hasCodeEnhancer === "true") return;
+    nodes.forEach((node) => {
+      const isFigure = node.matches("[data-rehype-pretty-code-figure]");
+      const pre = isFigure
+        ? node.querySelector<HTMLPreElement>("pre")
+        : node.matches("pre")
+          ? (node as HTMLPreElement)
+          : null;
 
-      const pre = figure.querySelector<HTMLPreElement>("pre");
-      const code = figure.querySelector<HTMLElement>("pre code");
+      const code = pre?.querySelector<HTMLElement>("code");
       if (!pre || !code) return;
+
+      const host = isFigure ? node : pre;
+      if (host.dataset.hasCodeEnhancer === "true") return;
 
       const wrapper = document.createElement("div");
       wrapper.className = "code-block-wrapper";
@@ -2324,13 +2340,14 @@ export function DocsLayout({
 
       button.addEventListener("click", async () => {
         try {
-          const text = Array.from(
+          const lines = Array.from(
             code.querySelectorAll<HTMLElement>("[data-line]")
-          )
-            .map((line) => line.textContent ?? "")
-            .join("\n");
+          );
+          const text = lines.length
+            ? lines.map((line) => line.textContent ?? "").join("\n")
+            : code.textContent ?? "";
 
-          await navigator.clipboard.writeText(text || code.textContent || "");
+          await navigator.clipboard.writeText(text);
 
           button.dataset.copied = "true";
           button.textContent = "Copied";
@@ -2347,13 +2364,13 @@ export function DocsLayout({
         }
       });
 
-      figure.parentNode?.insertBefore(wrapper, figure);
-      wrapper.appendChild(figure);
+      host.parentNode?.insertBefore(wrapper, host);
+      wrapper.appendChild(host);
       wrapper.appendChild(button);
 
-      figure.dataset.hasCodeEnhancer = "true";
+      host.dataset.hasCodeEnhancer = "true";
     });
-  }, [children]);
+  }, [currentSlug]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3114,6 +3131,8 @@ const SANITIZE_SCHEMA = {
       "href",
       "target",
       "rel",
+      "className",
+      "ariaLabel",
     ],
     code: [
       ...(((defaultSchema.attributes as any)?.code as any[]) ?? []),

@@ -269,6 +269,8 @@ const SANITIZE_SCHEMA = {
       "href",
       "target",
       "rel",
+      "className",
+      "ariaLabel",
     ],
     code: [
       ...(((defaultSchema.attributes as any)?.code as any[]) ?? []),

@@ -1180,20 +1180,29 @@ a {
 }
 
 .markdown-body .heading-anchor {
+  display: inline-block;
   margin-left: 6px;
   color: var(--muted);
   font-size: 0.85em;
   text-decoration: none;
   opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   transition:
     opacity 0.12s ease-out,
-    color 0.12s ease-out;
+    color 0.12s ease-out,
+    visibility 0.12s ease-out;
 }
 
 .markdown-body h2:hover .heading-anchor,
 .markdown-body h3:hover .heading-anchor,
-.markdown-body h4:hover .heading-anchor {
+.markdown-body h4:hover .heading-anchor,
+.markdown-body h2:focus-within .heading-anchor,
+.markdown-body h3:focus-within .heading-anchor,
+.markdown-body h4:focus-within .heading-anchor {
   opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
   color: var(--accent);
 }
 
