@@ -2876,6 +2876,8 @@ import type {
 } from "hast";
 import type { Root as MdastRoot, Blockquote, Paragraph, Text } from "mdast";
 
+type SanitizeSchema = NonNullable<Parameters<typeof rehypeSanitize>[0]>;
+
 const ALERT_META: Record<
   string,
   {
@@ -3010,7 +3012,7 @@ function rehypeMermaidBlocks() {
   };
 }
 
-const SANITIZE_SCHEMA = {
+const SANITIZE_SCHEMA: SanitizeSchema = {
   ...defaultSchema,
   clobberPrefix: "user-content-",
   tagNames: [

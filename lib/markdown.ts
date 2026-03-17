@@ -194,15 +194,19 @@ const SANITIZE_SCHEMA: SanitizeSchema = {
       "ariaHidden",
       "role",
       "style",
-      /^data-[\w-]+$/i,
+      "data-line",
+      "data-highlighted-line",
+      "data-highlighted-chars",
+      "data-rehype-pretty-code-figure",
+      "data-rehype-pretty-code-title",
     ],
     figure: [
       "className",
-      /^data-[\w-]+$/i,
+      "data-rehype-pretty-code-figure",
     ],
     figcaption: [
       "className",
-      /^data-[\w-]+$/i,
+      "data-rehype-pretty-code-title",
     ],
     svg: [
       "viewBox",
