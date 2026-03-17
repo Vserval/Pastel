@@ -466,6 +466,70 @@ The footnote will render like this:
 
 ![Screenshot of rendered Markdown showing superscript numbers used to indicate footnotes, along with optional line breaks inside a note.](/assets/images/help/writing/footnote-rendered.png)
 
+## Mermaid diagrams
+
+You can render diagrams using [Mermaid](https://mermaid.js.org/) code blocks.
+
+
+```mermaid
+flowchart TD
+  A[User] --> B[Next.js App]
+  B --> C[Markdown Rendering]
+  C --> D[Mermaid SVG]
+```
+
+
+### More Mermaid samples
+
+#### Flowchart (with subgraph)
+
+
+```mermaid
+flowchart LR
+  subgraph Client
+    UI[UI] --> State[State]
+  end
+  subgraph Server
+    API[API] --> DB[(DB)]
+  end
+  State --> API
+```
+
+
+#### Sequence diagram
+
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant W as Web
+  participant A as API
+  participant D as DB
+  U->>W: Open docs page
+  W->>A: GET /docs/slug
+  A->>D: Load markdown
+  D-->>A: Content
+  A-->>W: HTML
+  W-->>U: Render
+```
+
+#### Class diagram
+
+```mermaid
+classDiagram
+  class Post {
+    +string title
+    +string slug
+    +string content
+  }
+  class Renderer {
+    +markdownToHtml(markdown) string
+  }
+  Renderer --> Post : renders
+```
+
+
 > \[!NOTE]
 > The position of a footnote in your Markdown does not influence where the footnote will be rendered. You can write a footnote right after your reference to the footnote, and the footnote will still render at the bottom of the Markdown. Footnotes are not supported in wikis.
 
@@ -526,6 +590,66 @@ When viewing a Markdown file, you can click **Code** at the top of the file to d
 ![Screenshot of a Markdown file in a repository showing options for interacting with the file. A button, labeled "Code", is outlined in dark orange.](/assets/images/help/writing/display-markdown-as-source-global-nav-update.png)
 
 Disabling Markdown rendering enables you to use source view features, such as line linking, which is not possible when viewing rendered Markdown files.
+
+## Mermaid 実描画サンプル
+
+### システム構成図
+
+```mermaid
+flowchart LR
+  User[User Browser]
+  Docs[Next.js Docs App]
+  MD[Markdown Files]
+  Renderer[Markdown Renderer]
+  Mermaid[Mermaid Diagram]
+  HTML[HTML Output]
+
+  User --> Docs
+  Docs --> MD
+  Docs --> Renderer
+  Renderer --> Mermaid
+  Mermaid --> HTML
+  HTML --> User
+```
+
+### シーケンス図
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant B as Browser
+  participant S as Next.js Server
+  participant M as Markdown Renderer
+
+  U->>B: Open docs page
+  B->>S: Request /docs/page
+  S->>M: Render Markdown
+  M-->>S: HTML
+  S-->>B: Send page
+  B-->>U: Display content
+```
+
+### クラス図
+
+```mermaid
+classDiagram
+  class Post {
+    title
+    slug
+    content
+  }
+
+  class MarkdownRenderer {
+    markdownToHtml()
+  }
+
+  class DocsPage {
+    render()
+  }
+
+  DocsPage --> MarkdownRenderer
+  MarkdownRenderer --> Post
+```
 
 ## Further reading
 

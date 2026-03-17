@@ -442,6 +442,18 @@ a {
   margin: 0 auto;
 }
 
+.markdown-body .mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 20px;
+  overflow-x: auto;
+}
+
+.markdown-body .mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
 .sidebar-title,
 .toc-title,
 .eyebrow,
@@ -1782,6 +1794,148 @@ a {
     width: min(220px, 100%);
   }
 }
+
+.markdown-body .mermaid,
+.markdown-body svg[aria-roledescription="flowchart"],
+.markdown-body svg[aria-roledescription="sequence"] {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 16px;
+  overflow-x: auto;
+}
+
+.markdown-body svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ===== Mermaid / Premium Dark Theme ===== */
+.markdown-body .mermaid {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0 0 28px;
+  padding: 18px;
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 18px;
+  background:
+    radial-gradient(
+      circle at top,
+      rgba(255, 255, 255, 0.035),
+      rgba(255, 255, 255, 0.012) 42%,
+      rgba(255, 255, 255, 0.008) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.018),
+      rgba(255, 255, 255, 0.01)
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 10px 30px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(6px);
+}
+
+.markdown-body .mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown-body .mermaid .node rect,
+.markdown-body .mermaid .node circle,
+.markdown-body .mermaid .node ellipse,
+.markdown-body .mermaid .node polygon,
+.markdown-body .mermaid .node path {
+  stroke-width: 1.4px;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.16));
+}
+
+.markdown-body .mermaid .node rect,
+.markdown-body .mermaid .label-container {
+  rx: 12px;
+  ry: 12px;
+}
+
+.markdown-body .mermaid .cluster rect {
+  rx: 16px;
+  ry: 16px;
+  stroke-width: 1.1px;
+  fill: rgba(255, 255, 255, 0.02) !important;
+}
+
+.markdown-body .mermaid .edgePath path,
+.markdown-body .mermaid .flowchart-link,
+.markdown-body .mermaid .messageLine0,
+.markdown-body .mermaid .messageLine1 {
+  stroke-width: 2px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.markdown-body .mermaid .arrowheadPath,
+.markdown-body .mermaid marker path {
+  stroke-width: 1px;
+}
+
+.markdown-body .mermaid text,
+.markdown-body .mermaid .nodeLabel,
+.markdown-body .mermaid .edgeLabel,
+.markdown-body .mermaid .messageText,
+.markdown-body .mermaid .labelText {
+  letter-spacing: 0.01em;
+  text-rendering: geometricPrecision;
+}
+
+.markdown-body .mermaid .edgeLabel,
+.markdown-body .mermaid .labelBox {
+  border-radius: 999px;
+}
+
+.markdown-body .mermaid .edgeLabel rect,
+.markdown-body .mermaid .labelBox {
+  fill: #111827 !important;
+  opacity: 0.96;
+}
+
+.markdown-body .mermaid .actor {
+  stroke-width: 1.4px;
+}
+
+.markdown-body .mermaid .actor-line,
+.markdown-body .mermaid .lifeline {
+  stroke-dasharray: 4 4;
+  opacity: 0.7;
+}
+
+.markdown-body .mermaid .note {
+  border-radius: 12px;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.14));
+}
+
+.markdown-body .mermaid foreignObject > div {
+  border-radius: 12px;
+}
+
+@media (max-width: 800px) {
+  .markdown-body .mermaid {
+    margin-bottom: 22px;
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .markdown-body .mermaid .node rect,
+  .markdown-body .mermaid .label-container {
+    rx: 10px;
+    ry: 10px;
+  }
+
+  .markdown-body .mermaid .cluster rect {
+    rx: 12px;
+    ry: 12px;
+  }
+}
 ```
 
 ---
@@ -1828,7 +1982,7 @@ export default function HomePage() {
 ## `components/docs-home-shell.tsx`
 
 ```tsx
-"use client";
+ "use client";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -1836,6 +1990,7 @@ import { DocsSidebar } from "@/components/docs-sidebar";
 import { SearchBox } from "@/components/search-box";
 import { DocsHome } from "@/components/docs-home";
 import type { PostMeta } from "@/lib/posts";
+import { basePath } from "@/lib/site";
 
 export function DocsHomeShell({ posts }: { posts: PostMeta[] }) {
   const [query, setQuery] = useState("");
@@ -1858,7 +2013,7 @@ export function DocsHomeShell({ posts }: { posts: PostMeta[] }) {
       <header className="topbar topbar--dark">
         <Link href="/" className="topbar-brand" prefetch={false}>
           <span className="topbar-logo" aria-hidden="true">
-            <img src="/freepik__text-to-image__24694.png" alt="" />
+            <img src={`${basePath}/freepik__text-to-image__24694.png`} alt="" />
           </span>
           <span className="topbar-title">My Docs</span>
         </Link>
@@ -1888,11 +2043,12 @@ export function DocsHomeShell({ posts }: { posts: PostMeta[] }) {
 ## `components/docs-home.tsx`
 
 ```tsx
-"use client";
+ "use client";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { PostMeta } from "@/lib/posts";
+import { basePath } from "@/lib/site";
 
 const PAGE_SIZE = 12;
 
@@ -1956,7 +2112,7 @@ export function DocsHome({ posts }: { posts: PostMeta[] }) {
         </div>
         <div className="hero-image">
           <img
-            src="/freepik__text-to-image__26502.png"
+            src={`${basePath}/freepik__text-to-image__26502.png`}
             alt=""
             className="hero-image-img"
             width={560}
@@ -2099,6 +2255,7 @@ import { DocsToc } from "@/components/docs-toc";
 import { SearchBox } from "@/components/search-box";
 import type { PostMeta } from "@/lib/posts";
 import type { Heading } from "@/lib/markdown";
+import { basePath } from "@/lib/site";
 
 export function DocsLayout({
   posts,
@@ -2198,6 +2355,108 @@ export function DocsLayout({
     });
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function renderMermaid() {
+      const mermaidBlocks = Array.from(
+        document.querySelectorAll<HTMLElement>(".markdown-body .mermaid")
+      );
+
+      if (mermaidBlocks.length === 0) return;
+
+      const mermaidModule = await import("mermaid");
+      if (cancelled) return;
+
+      const mermaid = mermaidModule.default;
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: "base",
+        securityLevel: "strict",
+        flowchart: {
+          curve: "basis",
+          htmlLabels: true,
+          padding: 18,
+          nodeSpacing: 34,
+          rankSpacing: 42,
+        },
+        sequence: {
+          useMaxWidth: true,
+          wrap: true,
+          diagramMarginX: 24,
+          diagramMarginY: 16,
+          actorMargin: 40,
+          messageMargin: 28,
+        },
+        themeVariables: {
+          background: "#0b1020",
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+          fontSize: "14px",
+          textColor: "#e5e7eb",
+
+          primaryColor: "#182334",
+          primaryTextColor: "#e5e7eb",
+          primaryBorderColor: "#8fb7d8",
+
+          secondaryColor: "#111827",
+          secondaryTextColor: "#dbe4ee",
+          secondaryBorderColor: "#4b5f77",
+
+          tertiaryColor: "#0f172a",
+          tertiaryTextColor: "#d7e0ea",
+          tertiaryBorderColor: "#32465d",
+
+          mainBkg: "#182334",
+          secondBkg: "#111827",
+          tertiaryBkg: "#0f172a",
+
+          lineColor: "#88a9c7",
+          defaultLinkColor: "#88a9c7",
+
+          nodeBorder: "#8fb7d8",
+          clusterBkg: "rgba(255,255,255,0.02)",
+          clusterBorder: "#2a3a4f",
+
+          edgeLabelBackground: "#111827",
+          labelBackground: "#111827",
+
+          actorBkg: "#182334",
+          actorBorder: "#8fb7d8",
+          actorTextColor: "#e5e7eb",
+          actorLineColor: "#5c728a",
+          signalColor: "#8fb7d8",
+          signalTextColor: "#dbe4ee",
+
+          sectionBkgColor: "rgba(255,255,255,0.02)",
+          altSectionBkgColor: "rgba(255,255,255,0.03)",
+          sectionBkg: "rgba(255,255,255,0.02)",
+
+          cScale0: "#182334",
+          cScale1: "#1d2a3d",
+          cScale2: "#223149",
+          cScale3: "#273854",
+          cScale4: "#2c405f",
+          cScale5: "#31476a",
+          cScale6: "#374f75",
+          cScale7: "#3d5780",
+        },
+      });
+
+      await mermaid.run({
+        nodes: mermaidBlocks,
+      });
+    }
+
+    renderMermaid().catch((error) => {
+      console.error("Mermaid render failed:", error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [children]);
+
   const segments = currentSlug.split("/").filter(Boolean);
 
   return (
@@ -2205,7 +2464,7 @@ export function DocsLayout({
       <header className="topbar topbar--dark">
         <Link href="/" className="topbar-brand" prefetch={false}>
           <span className="topbar-logo" aria-hidden="true">
-            <img src="/freepik__text-to-image__24694.png" alt="" />
+            <img src={`${basePath}/freepik__text-to-image__24694.png`} alt="" />
           </span>
           <span className="topbar-title">My Docs</span>
         </Link>
@@ -2597,7 +2856,11 @@ import rehypePrettyCode from "rehype-pretty-code";
 import rehypeStringify from "rehype-stringify";
 import GithubSlugger from "github-slugger";
 import { visit } from "unist-util-visit";
-import type { Root as HastRoot, Element as HastElement } from "hast";
+import type {
+  Root as HastRoot,
+  Element as HastElement,
+  Text as HastText,
+} from "hast";
 import type { Root as MdastRoot, Blockquote, Paragraph, Text } from "mdast";
 
 const ALERT_META: Record<
@@ -2694,9 +2957,72 @@ function rehypeExternalLinks() {
   };
 }
 
+function rehypeMermaidBlocks() {
+  return (tree: HastRoot) => {
+    visit(tree, "element", (node: HastElement, index, parent) => {
+      if (node.tagName !== "pre" || !parent || typeof index !== "number") {
+        return;
+      }
+
+      const code = node.children[0] as HastElement | undefined;
+      if (!code || code.type !== "element" || code.tagName !== "code") {
+        return;
+      }
+
+      const className = code.properties?.className;
+      const classes = Array.isArray(className) ? className : [];
+      const isMermaid = classes.includes("language-mermaid");
+
+      if (!isMermaid) return;
+
+      const text = (code.children as HastText[])
+        .filter((child) => child.type === "text")
+        .map((child) => child.value)
+        .join("");
+
+      parent.children[index] = {
+        type: "element",
+        tagName: "div",
+        properties: {
+          className: ["mermaid"],
+        },
+        children: [
+          {
+            type: "text",
+            value: text,
+          },
+        ],
+      } as HastElement;
+    });
+  };
+}
+
 const SANITIZE_SCHEMA = {
   ...defaultSchema,
   clobberPrefix: "user-content-",
+  tagNames: [
+    ...((defaultSchema.tagNames ?? []) as string[]),
+    "svg",
+    "g",
+    "path",
+    "line",
+    "rect",
+    "circle",
+    "ellipse",
+    "polygon",
+    "polyline",
+    "marker",
+    "defs",
+    "pattern",
+    "mask",
+    "clipPath",
+    "linearGradient",
+    "radialGradient",
+    "stop",
+    "foreignObject",
+    "text",
+    "tspan",
+  ],
   attributes: {
     ...(defaultSchema.attributes ?? {}),
     "*": [
@@ -2708,8 +3034,71 @@ const SANITIZE_SCHEMA = {
       "ariaCurrent",
       "ariaHidden",
       "role",
+      "style",
       /^data-[\w-]+$/i,
     ],
+    svg: [
+      "viewBox",
+      "width",
+      "height",
+      "xmlns",
+      "fill",
+      "stroke",
+      "stroke-width",
+      "className",
+      "role",
+      "aria-labelledby",
+      "ariaLabelledby",
+    ],
+    g: ["fill", "stroke", "className", "transform"],
+    path: ["d", "fill", "stroke", "stroke-width", "marker-start", "marker-end"],
+    line: ["x1", "x2", "y1", "y2", "stroke", "stroke-width"],
+    rect: [
+      "x",
+      "y",
+      "width",
+      "height",
+      "rx",
+      "ry",
+      "fill",
+      "stroke",
+      "stroke-width",
+    ],
+    circle: ["cx", "cy", "r", "fill", "stroke", "stroke-width"],
+    ellipse: ["cx", "cy", "rx", "ry", "fill", "stroke", "stroke-width"],
+    polygon: ["points", "fill", "stroke", "stroke-width"],
+    polyline: ["points", "fill", "stroke", "stroke-width"],
+    marker: [
+      "id",
+      "viewBox",
+      "refX",
+      "refY",
+      "markerWidth",
+      "markerHeight",
+      "orient",
+    ],
+    defs: [],
+    pattern: ["id", "width", "height", "patternUnits"],
+    mask: ["id"],
+    clipPath: ["id"],
+    linearGradient: ["id", "x1", "x2", "y1", "y2"],
+    radialGradient: ["id", "cx", "cy", "r", "fx", "fy"],
+    stop: ["offset", "stop-color", "stop-opacity", "stopColor", "stopOpacity"],
+    foreignObject: ["x", "y", "width", "height"],
+    text: [
+      "x",
+      "y",
+      "fill",
+      "font-size",
+      "font-family",
+      "text-anchor",
+      "dominant-baseline",
+      "fontSize",
+      "fontFamily",
+      "textAnchor",
+      "dominantBaseline",
+    ],
+    tspan: ["x", "y", "dx", "dy"],
     a: [
       ...(((defaultSchema.attributes as any)?.a as any[]) ?? []),
       "href",
@@ -2764,7 +3153,6 @@ export async function markdownToHtml(markdown: string): Promise<string> {
       allowDangerousHtml: true,
     })
     .use(rehypeRaw)
-    .use(rehypeSanitize, SANITIZE_SCHEMA)
     .use(rehypeSlug)
     .use(rehypeAutolinkHeadings, {
       behavior: "append",
@@ -2778,11 +3166,13 @@ export async function markdownToHtml(markdown: string): Promise<string> {
       },
     })
     .use(rehypeExternalLinks)
+    .use(rehypeMermaidBlocks)
     .use(rehypePrettyCode, {
       theme: "github-dark-default",
       keepBackground: false,
       defaultLang: "text",
     })
+    .use(rehypeSanitize, SANITIZE_SCHEMA)
     .use(rehypeStringify, {
       allowDangerousHtml: true,
     })
@@ -2938,6 +3328,15 @@ export function getPostBySlug(slugParts: string[]): Post | undefined {
 
 ---
 
+## `lib/site.ts`
+
+```ts
+export const basePath =
+  process.env.NODE_ENV === "production" ? "/Pastel" : "";
+```
+
+---
+
 ## `next.config.ts`
 
 ```ts
@@ -2985,6 +3384,7 @@ export default nextConfig;
     "github-markdown-css": "^5.9.0",
     "github-slugger": "^2.0.0",
     "gray-matter": "^4.0.3",
+    "mermaid": "^11.13.0",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -3489,6 +3889,70 @@ The footnote will render like this:
 
 ![Screenshot of rendered Markdown showing superscript numbers used to indicate footnotes, along with optional line breaks inside a note.](/assets/images/help/writing/footnote-rendered.png)
 
+## Mermaid diagrams
+
+You can render diagrams using [Mermaid](https://mermaid.js.org/) code blocks.
+
+
+```mermaid
+flowchart TD
+  A[User] --> B[Next.js App]
+  B --> C[Markdown Rendering]
+  C --> D[Mermaid SVG]
+```
+
+
+### More Mermaid samples
+
+#### Flowchart (with subgraph)
+
+
+```mermaid
+flowchart LR
+  subgraph Client
+    UI[UI] --> State[State]
+  end
+  subgraph Server
+    API[API] --> DB[(DB)]
+  end
+  State --> API
+```
+
+
+#### Sequence diagram
+
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant W as Web
+  participant A as API
+  participant D as DB
+  U->>W: Open docs page
+  W->>A: GET /docs/slug
+  A->>D: Load markdown
+  D-->>A: Content
+  A-->>W: HTML
+  W-->>U: Render
+```
+
+#### Class diagram
+
+```mermaid
+classDiagram
+  class Post {
+    +string title
+    +string slug
+    +string content
+  }
+  class Renderer {
+    +markdownToHtml(markdown) string
+  }
+  Renderer --> Post : renders
+```
+
+
 > \[!NOTE]
 > The position of a footnote in your Markdown does not influence where the footnote will be rendered. You can write a footnote right after your reference to the footnote, and the footnote will still render at the bottom of the Markdown. Footnotes are not supported in wikis.
 
@@ -3549,6 +4013,66 @@ When viewing a Markdown file, you can click **Code** at the top of the file to d
 ![Screenshot of a Markdown file in a repository showing options for interacting with the file. A button, labeled "Code", is outlined in dark orange.](/assets/images/help/writing/display-markdown-as-source-global-nav-update.png)
 
 Disabling Markdown rendering enables you to use source view features, such as line linking, which is not possible when viewing rendered Markdown files.
+
+## Mermaid 実描画サンプル
+
+### システム構成図
+
+```mermaid
+flowchart LR
+  User[User Browser]
+  Docs[Next.js Docs App]
+  MD[Markdown Files]
+  Renderer[Markdown Renderer]
+  Mermaid[Mermaid Diagram]
+  HTML[HTML Output]
+
+  User --> Docs
+  Docs --> MD
+  Docs --> Renderer
+  Renderer --> Mermaid
+  Mermaid --> HTML
+  HTML --> User
+```
+
+### シーケンス図
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant B as Browser
+  participant S as Next.js Server
+  participant M as Markdown Renderer
+
+  U->>B: Open docs page
+  B->>S: Request /docs/page
+  S->>M: Render Markdown
+  M-->>S: HTML
+  S-->>B: Send page
+  B-->>U: Display content
+```
+
+### クラス図
+
+```mermaid
+classDiagram
+  class Post {
+    title
+    slug
+    content
+  }
+
+  class MarkdownRenderer {
+    markdownToHtml()
+  }
+
+  class DocsPage {
+    render()
+  }
+
+  DocsPage --> MarkdownRenderer
+  MarkdownRenderer --> Post
+```
 
 ## Further reading
 

@@ -11,7 +11,11 @@ import rehypePrettyCode from "rehype-pretty-code";
 import rehypeStringify from "rehype-stringify";
 import GithubSlugger from "github-slugger";
 import { visit } from "unist-util-visit";
-import type { Root as HastRoot, Element as HastElement } from "hast";
+import type {
+  Root as HastRoot,
+  Element as HastElement,
+  Text as HastText,
+} from "hast";
 import type { Root as MdastRoot, Blockquote, Paragraph, Text } from "mdast";
 
 const ALERT_META: Record<
@@ -108,9 +112,72 @@ function rehypeExternalLinks() {
   };
 }
 
+function rehypeMermaidBlocks() {
+  return (tree: HastRoot) => {
+    visit(tree, "element", (node: HastElement, index, parent) => {
+      if (node.tagName !== "pre" || !parent || typeof index !== "number") {
+        return;
+      }
+
+      const code = node.children[0] as HastElement | undefined;
+      if (!code || code.type !== "element" || code.tagName !== "code") {
+        return;
+      }
+
+      const className = code.properties?.className;
+      const classes = Array.isArray(className) ? className : [];
+      const isMermaid = classes.includes("language-mermaid");
+
+      if (!isMermaid) return;
+
+      const text = (code.children as HastText[])
+        .filter((child) => child.type === "text")
+        .map((child) => child.value)
+        .join("");
+
+      parent.children[index] = {
+        type: "element",
+        tagName: "div",
+        properties: {
+          className: ["mermaid"],
+        },
+        children: [
+          {
+            type: "text",
+            value: text,
+          },
+        ],
+      } as HastElement;
+    });
+  };
+}
+
 const SANITIZE_SCHEMA = {
   ...defaultSchema,
   clobberPrefix: "user-content-",
+  tagNames: [
+    ...((defaultSchema.tagNames ?? []) as string[]),
+    "svg",
+    "g",
+    "path",
+    "line",
+    "rect",
+    "circle",
+    "ellipse",
+    "polygon",
+    "polyline",
+    "marker",
+    "defs",
+    "pattern",
+    "mask",
+    "clipPath",
+    "linearGradient",
+    "radialGradient",
+    "stop",
+    "foreignObject",
+    "text",
+    "tspan",
+  ],
   attributes: {
     ...(defaultSchema.attributes ?? {}),
     "*": [
@@ -122,8 +189,71 @@ const SANITIZE_SCHEMA = {
       "ariaCurrent",
       "ariaHidden",
       "role",
+      "style",
       /^data-[\w-]+$/i,
     ],
+    svg: [
+      "viewBox",
+      "width",
+      "height",
+      "xmlns",
+      "fill",
+      "stroke",
+      "stroke-width",
+      "className",
+      "role",
+      "aria-labelledby",
+      "ariaLabelledby",
+    ],
+    g: ["fill", "stroke", "className", "transform"],
+    path: ["d", "fill", "stroke", "stroke-width", "marker-start", "marker-end"],
+    line: ["x1", "x2", "y1", "y2", "stroke", "stroke-width"],
+    rect: [
+      "x",
+      "y",
+      "width",
+      "height",
+      "rx",
+      "ry",
+      "fill",
+      "stroke",
+      "stroke-width",
+    ],
+    circle: ["cx", "cy", "r", "fill", "stroke", "stroke-width"],
+    ellipse: ["cx", "cy", "rx", "ry", "fill", "stroke", "stroke-width"],
+    polygon: ["points", "fill", "stroke", "stroke-width"],
+    polyline: ["points", "fill", "stroke", "stroke-width"],
+    marker: [
+      "id",
+      "viewBox",
+      "refX",
+      "refY",
+      "markerWidth",
+      "markerHeight",
+      "orient",
+    ],
+    defs: [],
+    pattern: ["id", "width", "height", "patternUnits"],
+    mask: ["id"],
+    clipPath: ["id"],
+    linearGradient: ["id", "x1", "x2", "y1", "y2"],
+    radialGradient: ["id", "cx", "cy", "r", "fx", "fy"],
+    stop: ["offset", "stop-color", "stop-opacity", "stopColor", "stopOpacity"],
+    foreignObject: ["x", "y", "width", "height"],
+    text: [
+      "x",
+      "y",
+      "fill",
+      "font-size",
+      "font-family",
+      "text-anchor",
+      "dominant-baseline",
+      "fontSize",
+      "fontFamily",
+      "textAnchor",
+      "dominantBaseline",
+    ],
+    tspan: ["x", "y", "dx", "dy"],
     a: [
       ...(((defaultSchema.attributes as any)?.a as any[]) ?? []),
       "href",
@@ -178,7 +308,6 @@ export async function markdownToHtml(markdown: string): Promise<string> {
       allowDangerousHtml: true,
     })
     .use(rehypeRaw)
-    .use(rehypeSanitize, SANITIZE_SCHEMA)
     .use(rehypeSlug)
     .use(rehypeAutolinkHeadings, {
       behavior: "append",
@@ -192,11 +321,13 @@ export async function markdownToHtml(markdown: string): Promise<string> {
       },
     })
     .use(rehypeExternalLinks)
+    .use(rehypeMermaidBlocks)
     .use(rehypePrettyCode, {
       theme: "github-dark-default",
       keepBackground: false,
       defaultLang: "text",
     })
+    .use(rehypeSanitize, SANITIZE_SCHEMA)
     .use(rehypeStringify, {
       allowDangerousHtml: true,
     })

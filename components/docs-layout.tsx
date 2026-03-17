@@ -108,6 +108,108 @@ export function DocsLayout({
     });
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function renderMermaid() {
+      const mermaidBlocks = Array.from(
+        document.querySelectorAll<HTMLElement>(".markdown-body .mermaid")
+      );
+
+      if (mermaidBlocks.length === 0) return;
+
+      const mermaidModule = await import("mermaid");
+      if (cancelled) return;
+
+      const mermaid = mermaidModule.default;
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: "base",
+        securityLevel: "strict",
+        flowchart: {
+          curve: "basis",
+          htmlLabels: true,
+          padding: 18,
+          nodeSpacing: 34,
+          rankSpacing: 42,
+        },
+        sequence: {
+          useMaxWidth: true,
+          wrap: true,
+          diagramMarginX: 24,
+          diagramMarginY: 16,
+          actorMargin: 40,
+          messageMargin: 28,
+        },
+        themeVariables: {
+          background: "#0b1020",
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+          fontSize: "14px",
+          textColor: "#e5e7eb",
+
+          primaryColor: "#182334",
+          primaryTextColor: "#e5e7eb",
+          primaryBorderColor: "#8fb7d8",
+
+          secondaryColor: "#111827",
+          secondaryTextColor: "#dbe4ee",
+          secondaryBorderColor: "#4b5f77",
+
+          tertiaryColor: "#0f172a",
+          tertiaryTextColor: "#d7e0ea",
+          tertiaryBorderColor: "#32465d",
+
+          mainBkg: "#182334",
+          secondBkg: "#111827",
+          tertiaryBkg: "#0f172a",
+
+          lineColor: "#88a9c7",
+          defaultLinkColor: "#88a9c7",
+
+          nodeBorder: "#8fb7d8",
+          clusterBkg: "rgba(255,255,255,0.02)",
+          clusterBorder: "#2a3a4f",
+
+          edgeLabelBackground: "#111827",
+          labelBackground: "#111827",
+
+          actorBkg: "#182334",
+          actorBorder: "#8fb7d8",
+          actorTextColor: "#e5e7eb",
+          actorLineColor: "#5c728a",
+          signalColor: "#8fb7d8",
+          signalTextColor: "#dbe4ee",
+
+          sectionBkgColor: "rgba(255,255,255,0.02)",
+          altSectionBkgColor: "rgba(255,255,255,0.03)",
+          sectionBkg: "rgba(255,255,255,0.02)",
+
+          cScale0: "#182334",
+          cScale1: "#1d2a3d",
+          cScale2: "#223149",
+          cScale3: "#273854",
+          cScale4: "#2c405f",
+          cScale5: "#31476a",
+          cScale6: "#374f75",
+          cScale7: "#3d5780",
+        },
+      });
+
+      await mermaid.run({
+        nodes: mermaidBlocks,
+      });
+    }
+
+    renderMermaid().catch((error) => {
+      console.error("Mermaid render failed:", error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [children]);
+
   const segments = currentSlug.split("/").filter(Boolean);
 
   return (
