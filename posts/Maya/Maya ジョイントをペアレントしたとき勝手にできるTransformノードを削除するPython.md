@@ -30,6 +30,9 @@ flowchart LR
 > [!IMPORTANT]  
 > skin 情報を保持したまま骨階層だけを安全に修復するのが目的です。
 
+# 使い方
+
+rootジョイントを選択してPythonを実行！！
 
 ![[自動削除.py]]
 

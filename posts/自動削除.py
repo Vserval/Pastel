@@ -6,12 +6,14 @@ import tempfile
 import traceback
 
 import maya.cmds as cmds
+import maya.api.OpenMaya as om2
 
 
 def repair_parent_inserted_transforms(
     roots=None,
     cleanup_weight_files=True,
     verbose=True,
+    max_passes=10,
 ):
     """
     Maya の joint-parent 時に挿入された余計な transform を自動修復します。
@@ -25,8 +27,8 @@ def repair_parent_inserted_transforms(
         1) 対象スケルトンに影響している skinCluster のウェイトを退避
         2) unbind
         3) bindPose を削除
-        4) スケルトン全体を Freeze Transform
-        5) 余計な transform を除去し、joint を元の親へ re-parent
+        4) inserted transform を child joint の offsetParentMatrix に吸収しつつ再ペアレント
+        5) 空になった inserted transform を削除
         6) skinCluster を再作成
         7) ウェイトを復元
 
@@ -46,6 +48,7 @@ def repair_parent_inserted_transforms(
         "skinClusters": [],
         "repairedTransforms": [],
         "weightDir": None,
+        "passes": 0,
     }
 
     temp_dir = tempfile.mkdtemp(prefix="maya_skel_repair_")
@@ -55,35 +58,54 @@ def repair_parent_inserted_transforms(
         cmds.undoInfo(openChunk=True, chunkName='repair_parent_inserted_transforms')
 
         all_joints = _collect_joints_from_roots(roots)
-        bad_transforms = _find_inserted_transforms(roots)
-
-        if verbose:
-            print(u'[INFO] joints: {}'.format(len(all_joints)))
-            print(u'[INFO] inserted transforms: {}'.format(len(bad_transforms)))
-
-        if not bad_transforms:
-            if verbose:
-                print(u'[INFO] 修正対象の transform は見つかりませんでした。')
-            return report
-
         skin_data = _collect_related_skin_data(all_joints)
         report["skinClusters"] = [d["skinCluster"] for d in skin_data]
 
         if verbose:
+            print(u'[INFO] joints: {}'.format(len(all_joints)))
             print(u'[INFO] related skinClusters: {}'.format(len(skin_data)))
 
         _export_and_unbind_skinclusters(skin_data, temp_dir, verbose=verbose)
         _delete_connected_bindposes(all_joints, verbose=verbose)
-        _freeze_skeletons(roots, verbose=verbose)
 
-        repaired = _repair_inserted_transforms(bad_transforms, verbose=verbose)
-        report["repairedTransforms"] = repaired
+        # transform 親配下の root joint を含むケースで姿勢が崩れないよう、
+        # スケルトン全体の Freeze Transform は行わない
+        # _freeze_skeletons(roots, verbose=verbose)
 
+        all_repaired = []
+
+        for i in range(max_passes):
+            bad_transforms = _find_inserted_transforms(roots)
+
+            if verbose:
+                print(u'[PASS {}] inserted transforms: {}'.format(i + 1, len(bad_transforms)))
+
+            if not bad_transforms:
+                report["passes"] = i + 1
+                break
+
+            repaired = _repair_inserted_transforms(bad_transforms, verbose=verbose)
+            all_repaired.extend(repaired)
+
+            # 何も直せなかったら無限ループ防止
+            if not repaired:
+                cmds.warning(u'これ以上修復できない transform が残っています。')
+                report["passes"] = i + 1
+                break
+        else:
+            report["passes"] = max_passes
+            cmds.warning(u'max_passes に達しました。transform が残っている可能性があります。')
+
+        report["repairedTransforms"] = _unique_existing_long_names(all_repaired)
+
+        _delete_empty_inserted_transforms(roots, verbose=verbose)
         _rebind_and_restore_weights(skin_data, temp_dir, verbose=verbose)
 
         if verbose:
+            remaining = _find_inserted_transforms(roots)
             print(u'[DONE] 修復完了')
-            print(u'  repaired transforms : {}'.format(len(repaired)))
+            print(u'  repaired transforms : {}'.format(len(report["repairedTransforms"])))
+            print(u'  remaining transforms: {}'.format(len(remaining)))
             print(u'  restored skinClusters: {}'.format(len(skin_data)))
 
         return report
@@ -131,16 +153,12 @@ def _collect_joints_from_roots(roots):
 
 def _find_inserted_transforms(roots):
     """
-    joint の下にある「shape を持たない transform」で、
-    子に joint を持つものを中間 transform とみなして返す。
-    深い階層から処理するため、パス深度の降順で返す。
+    「joint の子なのに joint ではない transform / shapeなし / joint 子を持つ」を
+    問題 transform とみなす。
+    深い階層から処理したいので path 長の降順で返す。
     """
     candidates = []
-
     for root in roots:
-        if not cmds.objExists(root):
-            continue
-
         descendants = cmds.listRelatives(root, ad=True, fullPath=True, type='transform') or []
         for node in descendants:
             if not cmds.objExists(node):
@@ -277,35 +295,81 @@ def _delete_connected_bindposes(joints, verbose=True):
 
 
 def _freeze_skeletons(roots, verbose=True):
-    """
-    ルートだけでなく配下 joint 全体に対して Freeze を実行する。
-    """
-    all_joints = _collect_joints_from_roots(roots)
-
     if verbose:
-        print(u'[FREEZE] joints: {}'.format(len(all_joints)))
+        print(u'[FREEZE] skeleton roots: {}'.format(len(roots)))
 
-    for jnt in all_joints:
-        if not cmds.objExists(jnt):
+    for root in roots:
+        if not cmds.objExists(root):
             continue
+        cmds.makeIdentity(
+            root,
+            apply=True,
+            translate=True,
+            rotate=True,
+            scale=True,
+            jointOrient=False,
+        )
+
+
+def _get_matrix_attr(attr):
+    v = cmds.getAttr(attr)
+    if isinstance(v, (list, tuple)) and len(v) == 1:
+        v = v[0]
+    return om2.MMatrix(v)
+
+
+def _set_matrix_attr(attr, m):
+    cmds.setAttr(attr, *list(m), type='matrix')
+
+
+def _has_offset_parent_matrix(node):
+    return cmds.attributeQuery('offsetParentMatrix', node=node, exists=True)
+
+
+def _delete_empty_inserted_transforms(roots, verbose=True):
+    """
+    joint の子にぶら下がっている shape なし空 transform を後処理で削除する。
+    """
+    deleted = []
+
+    candidates = []
+    for root in roots:
+        descendants = cmds.listRelatives(root, ad=True, fullPath=True, type='transform') or []
+        candidates.extend(descendants)
+
+    candidates = _unique_existing_long_names(candidates)
+    candidates.sort(key=lambda x: x.count('|'), reverse=True)
+
+    for tr in candidates:
+        if not cmds.objExists(tr):
+            continue
+        if cmds.nodeType(tr) != 'transform':
+            continue
+
+        parent = cmds.listRelatives(tr, parent=True, fullPath=True) or []
+        if not parent or cmds.nodeType(parent[0]) != 'joint':
+            continue
+
+        shapes = cmds.listRelatives(tr, shapes=True, fullPath=True) or []
+        if shapes:
+            continue
+
+        children = cmds.listRelatives(tr, children=True, fullPath=True) or []
+        if children:
+            continue
+
         try:
-            cmds.makeIdentity(
-                jnt,
-                apply=True,
-                translate=True,
-                rotate=True,
-                scale=True,
-                jointOrient=False,
-            )
+            cmds.delete(tr)
+            deleted.append(tr)
+            if verbose:
+                print(u'[CLEANUP] delete empty transform: {}'.format(tr))
         except Exception as e:
-            cmds.warning(u'Freeze失敗: {} / {}'.format(jnt, e))
+            cmds.warning(u'empty transform 削除失敗: {} / {}'.format(tr, e))
+
+    return deleted
 
 
 def _repair_inserted_transforms(bad_transforms, verbose=True):
-    """
-    中間 transform を削除し、子 joint を元の親 joint に戻す。
-    再ペアレント時は relative=True を使い、transform の再生成を防ぐ。
-    """
     repaired = []
 
     for tr in bad_transforms:
@@ -326,82 +390,78 @@ def _repair_inserted_transforms(bad_transforms, verbose=True):
 
         children = cmds.listRelatives(tr, children=True, fullPath=True) or []
         if not children:
+            # もう空なら消すだけ
+            try:
+                cmds.delete(tr)
+                repaired.append(tr)
+            except Exception:
+                pass
             continue
 
-        # 主に joint を対象にする
-        target_children = [c for c in children if cmds.objExists(c) and cmds.nodeType(c) == 'joint']
-        if not target_children:
+        joint_children = [c for c in children if cmds.objExists(c) and cmds.nodeType(c) == 'joint']
+        other_children = [c for c in children if cmds.objExists(c) and cmds.nodeType(c) != 'joint']
+
+        # joint 以外の子がいるなら危険なので触らない
+        if other_children:
+            cmds.warning(u'skip: {} has non-joint children'.format(tr))
+            continue
+
+        if not joint_children:
+            continue
+
+        if not _has_offset_parent_matrix(joint_children[0]):
+            cmds.warning(u'offsetParentMatrix が使えない Maya なので skip: {}'.format(tr))
             continue
 
         if verbose:
-            print(u'[REPAIR] delete inserted transform: {}'.format(tr))
+            print(u'[REPAIR] absorb inserted transform into offsetParentMatrix: {}'.format(tr))
 
-        detached_children = []
+        # inserted transform の「親に対するローカル行列」
+        tr_local_m = _get_matrix_attr(tr + '.matrix')
 
-        # まず world に外す
-        for child in target_children:
+        ok_children = []
+
+        for child in joint_children:
+            if not cmds.objExists(child):
+                continue
+
             try:
-                new_child = cmds.parent(child, world=True)[0]
-                new_child = (cmds.ls(new_child, long=True) or [new_child])[0]
-                detached_children.append(new_child)
-            except Exception as e:
-                cmds.warning(u'world への解除に失敗: {} / {}'.format(child, e))
+                # child が元から持っている OPM
+                child_opm = _get_matrix_attr(child + '.offsetParentMatrix')
 
-        # 空になった transform を削除
+                # 先に direct parent 化する
+                # absolute=True でワールド変換を維持したまま re-parent する
+                # （world に外した直後の relative は、親行列が二重に掛かりやすい）
+                new_child = cmds.parent(child, original_parent, absolute=True)[0]
+                new_child = (cmds.ls(new_child, long=True) or [new_child])[0]
+
+                # inserted transform 分を OPM に前掛けする
+                # old: parent * tr * childOPM * childLocal
+                # new: parent * newOPM * childLocal
+                # => newOPM = tr * childOPM
+                new_opm = tr_local_m * child_opm
+                _set_matrix_attr(new_child + '.offsetParentMatrix', new_opm)
+
+                ok_children.append(new_child)
+
+                # 再ペアレント後に Maya が transform を挿し直したかどうかを検知だけしておく
+                current_parent = cmds.listRelatives(new_child, parent=True, fullPath=True) or []
+                if current_parent and cmds.nodeType(current_parent[0]) == 'transform':
+                    if verbose:
+                        print(u'[INFO] Maya regenerated transform: {} -> {}'.format(new_child, current_parent[0]))
+
+            except Exception as e:
+                cmds.warning(u'OPM reparent 失敗: {} / {}'.format(child, e))
+
         if cmds.objExists(tr):
-            try:
-                cmds.delete(tr)
-            except Exception as e:
-                cmds.warning(u'transform 削除失敗: {} / {}'.format(tr, e))
-                continue
-
-        # 元の joint に relative で戻す
-        reparented_children = []
-        for child in detached_children:
-            if not cmds.objExists(child):
-                continue
-            try:
-                new_child = cmds.parent(child, original_parent, relative=True)[0]
-                new_child = (cmds.ls(new_child, long=True) or [new_child])[0]
-                reparented_children.append(new_child)
-            except Exception as e:
-                cmds.warning(u're-parent 失敗: {} -> {} / {}'.format(child, original_parent, e))
-
-        # 念のため、もし再生成された transform があれば潰す
-        for child in reparented_children:
-            if not cmds.objExists(child):
-                continue
-
-            current_parent = cmds.listRelatives(child, parent=True, fullPath=True) or []
-            if not current_parent:
-                continue
-
-            p = current_parent[0]
-            if cmds.nodeType(p) != 'transform':
-                continue
-
-            pp = cmds.listRelatives(p, parent=True, fullPath=True) or []
-            if not pp:
-                continue
-
-            if pp[0] != original_parent:
-                continue
-
-            shapes = cmds.listRelatives(p, shapes=True, fullPath=True) or []
-            siblings = cmds.listRelatives(p, children=True, fullPath=True) or []
-
-            # shape なし、子がこの joint だけなら中間 transform と判断して削除
-            if not shapes and len(siblings) == 1 and siblings[0] == child:
+            # 子が残っていなければ消す
+            remain_children = cmds.listRelatives(tr, children=True, fullPath=True) or []
+            if not remain_children:
                 try:
-                    temp = cmds.parent(child, world=True)[0]
-                    temp = (cmds.ls(temp, long=True) or [temp])[0]
-
-                    if cmds.objExists(p):
-                        cmds.delete(p)
-
-                    cmds.parent(temp, original_parent, relative=True)
+                    cmds.delete(tr)
                 except Exception as e:
-                    cmds.warning(u'再生成 transform の除去失敗: {} / {}'.format(p, e))
+                    cmds.warning(u'transform 削除失敗: {} / {}'.format(tr, e))
+                    continue
 
         repaired.append(tr)
 
@@ -471,6 +531,6 @@ def _rebind_and_restore_weights(skin_data, temp_dir, verbose=True):
 
 # 実行例:
 # 1) ルート joint を選択
-# 2) 下を実行
+
 report = repair_parent_inserted_transforms()
 print(report)
